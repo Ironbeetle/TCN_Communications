@@ -1,0 +1,189 @@
+// This is your Prisma schema file for TCN Communications
+// Using PostgreSQL database
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ==================== MODELS ====================
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  password      String    // bcrypt hashed
+  first_name    String
+  last_name     String
+  created       DateTime  @default(now())
+  updated       DateTime  @updatedAt
+  department    String    @default("BAND_OFFICE") // BAND_OFFICE, J_W_HEALTH_CENTER, CSCMEC, COUNCIL, RECREATION, UTILITIES
+  role          String    @default("STAFF") // STAFF, STAFF_ADMIN, ADMIN, CHIEF_COUNCIL
+
+  // Authentication
+  pin           String?   // 6-digit PIN for password reset
+  pinExpiresAt  DateTime?
+  lastLogin     DateTime?
+  loginAttempts Int       @default(0)
+  lockedUntil   DateTime? // Account lockout
+
+  // Password reset tracking
+  passwordResetRequested DateTime?
+  passwordResetCompleted DateTime?
+
+  // Relations
+  emails        EmailLog[]
+  staffemail    StaffEmailLog[]
+  bulletin      BulletinApiLog[]
+  sessions      Session[]
+  smslog        SmsLog[]
+  msgcnc        MsgCnC[]
+  loginLogs     LoginLog[]
+  signUpForms   SignUpForm[]
+}
+
+model LoginLog {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  loginTime   DateTime @default(now())
+  department  String
+  ipAddress   String?
+  userAgent   String?
+  success     Boolean  @default(true)
+  failReason  String?
+}
+
+model Session {
+  id            String   @id @default(cuid())
+  sessionToken  String   @unique
+  userId        String
+  expires       DateTime
+  created       DateTime @default(now())
+  updated       DateTime @updatedAt
+  access_token  String?
+  refresh_token String?
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model SmsLog {
+  id         String   @id @default(cuid())
+  created    DateTime @default(now())
+  updated    DateTime @updatedAt
+  message    String
+  recipients String   // JSON array stored as string
+  status     String   // 'sent', 'failed', 'partial'
+  messageIds String   // JSON array stored as string
+  error      String?
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model EmailLog {
+  id          String   @id @default(cuid())
+  created     DateTime @default(now())
+  updated     DateTime @updatedAt
+  subject     String
+  message     String
+  recipients  String   // JSON array stored as string
+  status      String   // 'sent', 'failed', 'partial'
+  messageId   String?
+  error       String?
+  attachments String?  // JSON: { files: [{ filename, size }] }
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model StaffEmailLog {
+  id          String   @id @default(cuid())
+  created     DateTime @default(now())
+  updated     DateTime @updatedAt
+  subject     String
+  message     String
+  recipients  String   // JSON array stored as string
+  status      String
+  messageId   String?
+  error       String?
+  attachments String?  // JSON
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model BulletinApiLog {
+  id         String   @id @default(cuid())
+  title      String
+  subject    String
+  poster_url String
+  category   String   @default("CHIEFNCOUNCIL") // CHIEFNCOUNCIL, HEALTH, EDUCATION, RECREATION, EMPLOYMENT, PROGRAM_EVENTS, ANNOUNCEMENTS
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  created    DateTime @default(now())
+  updated    DateTime @updatedAt
+}
+
+model MsgCnC {
+  id          String    @id @default(cuid())
+  title       String
+  content     String
+  priority    String    // 'low', 'medium', 'high'
+  type        String    @default("notice") // 'notice', 'event', 'job'
+  created     DateTime  @default(now())
+  expiryDate  DateTime?
+  isPublished Boolean   @default(false)
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date        DateTime
+  time        DateTime
+  location    String
+}
+
+// sign up forms
+
+model SignUpForm {
+  id              String    @id @default(cuid())
+  portalFormId    String?   @unique // Synced portal form ID
+  title           String
+  description     String?
+  category        String    @default("BAND_OFFICE") // Same as user departments: BAND_OFFICE, J_W_HEALTH_CENTER, CSCMEC, COUNCIL, RECREATION, UTILITIES
+  deadline        DateTime?
+  maxEntries      Int?
+  isActive        Boolean   @default(true)
+  allowResubmit   Boolean   @default(false) // Allow members to resubmit (for recurring programs)
+  resubmitMessage String?   // Custom message for resubmissions
+  createdBy       String
+  creator         User      @relation(fields: [createdBy], references: [id], onDelete: Cascade)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  syncedAt        DateTime?
+
+  fields      FormField[]
+  submissions FormSubmission[]
+}
+
+model FormField {
+  id          String     @id @default(cuid())
+  formId      String
+  form        SignUpForm @relation(fields: [formId], references: [id], onDelete: Cascade)
+  fieldId     String?    // Semantic ID for auto-fill (e.g., 'full_name', 'email')
+  label       String
+  fieldType   String     // TEXT, TEXTAREA, SELECT, MULTISELECT, CHECKBOX, DATE, NUMBER, EMAIL, PHONE
+  options     String?    // JSON: ["Option 1", "Option 2"]
+  placeholder String?
+  required    Boolean    @default(false)
+  order       Int
+}
+
+model FormSubmission {
+  id          String     @id @default(cuid())
+  formId      String
+  form        SignUpForm @relation(fields: [formId], references: [id], onDelete: Cascade)
+  memberId    String?
+  name        String
+  email       String?
+  phone       String?
+  responses   String     // JSON: { "field_id": "value", ... }
+  submittedAt DateTime   @default(now())
+}

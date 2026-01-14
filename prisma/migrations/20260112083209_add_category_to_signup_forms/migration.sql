@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE "SignUpForm" ADD COLUMN     "category" TEXT NOT NULL DEFAULT 'BAND_OFFICE';
