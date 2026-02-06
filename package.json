@@ -13,7 +13,6 @@
     "db:seed": "node prisma/seed.js",
     "build:linux": "electron-vite build && electron-builder --linux",
     "build:win": "electron-vite build && electron-builder --win"
-    
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^5.1.2",
@@ -25,6 +24,7 @@
   "dependencies": {
     "@prisma/client": "^6.2.0",
     "bcryptjs": "^2.4.3",
+    "dotenv": "^17.2.3",
     "electron-store": "^10.0.0",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",

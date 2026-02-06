@@ -54,9 +54,9 @@ function UserEditor({ currentUser }) {
   const filteredUsers = users.filter(user => {
     const search = searchTerm.toLowerCase()
     return (
-      user.email.toLowerCase().includes(search) ||
-      user.first_name.toLowerCase().includes(search) ||
-      user.last_name.toLowerCase().includes(search)
+      (user.email || '').toLowerCase().includes(search) ||
+      (user.first_name || '').toLowerCase().includes(search) ||
+      (user.last_name || '').toLowerCase().includes(search)
     )
   })
 
@@ -194,7 +194,7 @@ function UserEditor({ currentUser }) {
                       {ROLES.find(r => r.value === user.role)?.label || user.role}
                     </span>
                   </td>
-                  <td>{DEPARTMENTS.find(d => d.value === user.department)?.label || user.department.replace(/_/g, ' ')}</td>
+                  <td>{DEPARTMENTS.find(d => d.value === user.department)?.label || (user.department || '').replace(/_/g, ' ')}</td>
                   <td>
                     <span className={`status-badge ${user.lockedUntil ? 'locked' : 'active'}`}>
                       {user.lockedUntil ? 'Locked' : 'Active'}

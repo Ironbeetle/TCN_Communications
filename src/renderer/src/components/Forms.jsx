@@ -6,6 +6,7 @@ import './Forms.css'
 function Forms({ user }) {
   const [forms, setForms] = useState([])
   const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState(null)
   const [activeView, setActiveView] = useState('list') // list, create, edit, submissions
   const [selectedForm, setSelectedForm] = useState(null)
 
@@ -15,13 +16,20 @@ function Forms({ user }) {
 
   const loadForms = async () => {
     setIsLoading(true)
+    setError(null)
     try {
       const result = await window.electronAPI.forms.getAll()
       if (result.success) {
-        setForms(result.forms)
+        setForms(result.forms || [])
+      } else {
+        console.error('Forms load failed:', result.message)
+        setError(result.message || 'Failed to load forms')
+        setForms([])
       }
     } catch (error) {
       console.error('Failed to load forms:', error)
+      setError('Failed to connect to server. Please try again.')
+      setForms([])
     } finally {
       setIsLoading(false)
     }
@@ -110,7 +118,16 @@ function Forms({ user }) {
 
       {isLoading ? (
         <div className="forms-loading">Loading forms...</div>
-      ) : forms.length === 0 ? (
+      ) : error ? (
+        <div className="forms-error">
+          <div className="error-icon">⚠️</div>
+          <h3>Error Loading Forms</h3>
+          <p>{error}</p>
+          <button className="create-form-button" onClick={loadForms}>
+            Try Again
+          </button>
+        </div>
+      ) : !Array.isArray(forms) || forms.length === 0 ? (
         <div className="forms-empty">
           <div className="empty-icon">📝</div>
           <h3>No forms yet</h3>

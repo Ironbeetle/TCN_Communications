@@ -43,6 +43,30 @@
   color: rgba(255, 255, 255, 0.5);
 }
 
+.forms-error {
+  text-align: center;
+  padding: 4rem 2rem;
+  background: rgba(255, 100, 100, 0.05);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 100, 100, 0.2);
+}
+
+.forms-error .error-icon {
+  font-size: 3rem;
+  margin-bottom: 1rem;
+}
+
+.forms-error h3 {
+  font-size: 1.25rem;
+  margin-bottom: 0.5rem;
+  color: #ff6b6b;
+}
+
+.forms-error p {
+  color: rgba(255, 255, 255, 0.6);
+  margin-bottom: 1.5rem;
+}
+
 .forms-empty {
   text-align: center;
   padding: 4rem 2rem;

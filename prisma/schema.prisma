@@ -43,6 +43,9 @@ model User {
   msgcnc        MsgCnC[]
   loginLogs     LoginLog[]
   signUpForms   SignUpForm[]
+  timesheets    TimeSheet[]
+  officeMemos   OfficeMemo[]
+  travelForms   TravelForm[]
 }
 
 model LoginLog {
@@ -116,7 +119,8 @@ model BulletinApiLog {
   id         String   @id @default(cuid())
   title      String
   subject    String
-  poster_url String
+  content    String?
+  poster_url String?
   category   String   @default("CHIEFNCOUNCIL") // CHIEFNCOUNCIL, HEALTH, EDUCATION, RECREATION, EMPLOYMENT, PROGRAM_EVENTS, ANNOUNCEMENTS
   userId     String
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -147,7 +151,7 @@ model SignUpForm {
   portalFormId    String?   @unique // Synced portal form ID
   title           String
   description     String?
-  category        String    @default("BAND_OFFICE") // Same as user departments: BAND_OFFICE, J_W_HEALTH_CENTER, CSCMEC, COUNCIL, RECREATION, UTILITIES
+  category        String    @default("RECREATION") // Same as user departments: BAND_OFFICE, J_W_HEALTH_CENTER, CSCMEC, COUNCIL, RECREATION, UTILITIES
   deadline        DateTime?
   maxEntries      Int?
   isActive        Boolean   @default(true)
@@ -186,4 +190,161 @@ model FormSubmission {
   phone       String?
   responses   String     // JSON: { "field_id": "value", ... }
   submittedAt DateTime   @default(now())
+}
+
+// ==================== TIMESHEET MODELS ====================
+
+model TimeSheet {
+  id              String    @id @default(cuid())
+  created         DateTime  @default(now())
+  updated         DateTime  @updatedAt
+  userId          String
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Pay period information
+  payPeriodStart  DateTime
+  payPeriodEnd    DateTime
+  
+  // Status and submission
+  status          String    @default("DRAFT") // DRAFT, SUBMITTED, APPROVED, REJECTED
+  submittedAt     DateTime?
+  approvedAt      DateTime?
+  approvedBy      String?
+  rejectedAt      DateTime?
+  rejectedBy      String?
+  rejectionReason String?
+  
+  // Totals (stored as strings for decimal precision)
+  week1Total      Float     @default(0)
+  week2Total      Float     @default(0)
+  grandTotal      Float     @default(0)
+  
+  // Time entries
+  timeEntries     TimeEntry[]
+  
+  @@unique([userId, payPeriodStart])
+}
+
+model TimeEntry {
+  id           String     @id @default(cuid())
+  created      DateTime   @default(now())
+  updated      DateTime   @updatedAt
+  
+  timeSheetId  String
+  timeSheet    TimeSheet  @relation(fields: [timeSheetId], references: [id], onDelete: Cascade)
+  
+  date         DateTime
+  startTime    String?    // Format: "HH:MM"
+  endTime      String?    // Format: "HH:MM"
+  breakMinutes Int        @default(0)
+  totalHours   Float      @default(0)
+}
+
+// ==================== OFFICE MEMOS ====================
+
+model OfficeMemo {
+  id          String    @id @default(cuid())
+  title       String
+  content     String
+  priority    String    @default("low") // low, medium, high
+  department  String?   // Optional department filter
+  isPinned    Boolean   @default(false)
+  isPublished Boolean   @default(false)
+  expiryDate  DateTime?
+  readBy      String    @default("[]") // JSON array of user IDs who have read the memo
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  authorId    String
+  author      User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
+}
+
+// ==================== TRAVEL FORM MODELS ====================
+
+model TravelForm {
+  id                    String    @id @default(cuid())
+  
+  // Basic Information
+  name                  String
+  destination           String
+  departureDate         DateTime
+  returnDate            DateTime
+  reasonsForTravel      String
+  
+  // Accommodation
+  hotelRate             Float     @default(200.00)
+  hotelNights           Int       @default(0)
+  hotelTotal            Float     @default(0)
+  privateRate           Float     @default(50.00)
+  privateNights         Int       @default(0)
+  privateTotal          Float     @default(0)
+  
+  // Meals
+  breakfastRate         Float     @default(20.50)
+  breakfastDays         Int       @default(0)
+  breakfastTotal        Float     @default(0)
+  lunchRate             Float     @default(20.10)
+  lunchDays             Int       @default(0)
+  lunchTotal            Float     @default(0)
+  dinnerRate            Float     @default(50.65)
+  dinnerDays            Int       @default(0)
+  dinnerTotal           Float     @default(0)
+  
+  // Incidentals
+  incidentalRate        Float     @default(10.00)
+  incidentalDays        Int       @default(0)
+  incidentalTotal       Float     @default(0)
+  
+  // Transportation Type: PERSONAL_VEHICLE, PUBLIC_TRANSPORT_WINNIPEG, PUBLIC_TRANSPORT_THOMPSON, COMBINATION, OTHER
+  transportationType    String    @default("PERSONAL_VEHICLE")
+  
+  // Personal Vehicle
+  personalVehicleRate   Float     @default(0.50)
+  licensePlateNumber    String?
+  oneWayWinnipegKm      Int       @default(904)
+  oneWayWinnipegTrips   Int       @default(0)
+  oneWayWinnipegTotal   Float     @default(0)
+  oneWayThompsonKm      Int       @default(150)
+  oneWayThompsonTrips   Int       @default(0)
+  oneWayThompsonTotal   Float     @default(0)
+  
+  // Public Transportation
+  winnipegFlatRate      Float     @default(450.00)
+  thompsonFlatRate      Float     @default(100.00)
+  publicTransportTotal  Float     @default(0)
+  
+  // Taxi
+  taxiFareRate          Float     @default(17.30)
+  taxiFareDays          Int       @default(0)
+  taxiFareTotal         Float     @default(0)
+  
+  // Parking
+  parkingTotal          Float     @default(0)
+  parkingReceipts       Boolean   @default(false)
+  
+  // Grand Total
+  grandTotal            Float     @default(0)
+  
+  // Form Status: DRAFT, SUBMITTED, UNDER_REVIEW, APPROVED, REJECTED, ISSUED, COMPLETED, CANCELLED
+  status                String    @default("DRAFT")
+  
+  // Submission Details
+  submittedDate         DateTime?
+  
+  // Authorization Details
+  authorizedBy          String?
+  authorizedDate        DateTime?
+  rejectedAt            DateTime?
+  rejectedBy            String?
+  rejectionReason       String?
+  
+  // Notes
+  notes                 String?
+  
+  // Audit Fields
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  
+  // Relations
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 }

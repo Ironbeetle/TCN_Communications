@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import Login from './components/Login'
 import Dashboard from './components/Dashboard'
 import AdminDashboard from './components/AdminDashboard'
+import StaffAdminDashboard from './components/StaffAdminDashboard'
 
 function App() {
   const [user, setUser] = useState(null)
@@ -49,12 +50,20 @@ function App() {
 
   // Role-based routing
   const isAdmin = user.role === 'ADMIN' || user.role === 'CHIEF_COUNCIL'
+  const isStaffAdmin = user.role === 'STAFF_ADMIN'
   
-  return isAdmin ? (
-    <AdminDashboard user={user} onLogout={handleLogout} />
-  ) : (
-    <Dashboard user={user} onLogout={handleLogout} />
-  )
+  // Admin gets full admin dashboard
+  if (isAdmin) {
+    return <AdminDashboard user={user} onLogout={handleLogout} />
+  }
+  
+  // Staff Admin gets the staff admin dashboard
+  if (isStaffAdmin) {
+    return <StaffAdminDashboard user={user} onLogout={handleLogout} />
+  }
+  
+  // Regular staff get the standard dashboard
+  return <Dashboard user={user} onLogout={handleLogout} />
 }
 
 export default App

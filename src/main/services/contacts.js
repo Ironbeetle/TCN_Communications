@@ -1,32 +1,6 @@
-import { getPrisma } from './database.js'
-
 // TCN Portal API Client for member contacts
-// Note: You'll need to set PORTAL_API_URL and PORTAL_API_KEY in .env
 
-async function portalFetch(endpoint, options = {}) {
-  const baseUrl = process.env.PORTAL_API_URL
-  const apiKey = process.env.PORTAL_API_KEY
-
-  if (!baseUrl || !apiKey) {
-    throw new Error('Portal API not configured')
-  }
-
-  const response = await fetch(`${baseUrl}${endpoint}`, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      'X-API-Key': apiKey,
-      'X-Source': 'tcn-comm',
-      ...options.headers
-    }
-  })
-
-  if (!response.ok) {
-    throw new Error(`Portal API error: ${response.status}`)
-  }
-
-  return response.json()
-}
+import { apiRequest } from './api-helpers.js'
 
 export async function searchMembers(searchTerm, limit = 50) {
   try {
@@ -37,12 +11,12 @@ export async function searchMembers(searchTerm, limit = 50) {
       fields: 'both'
     })
 
-    const data = await portalFetch(`/contacts?${params}`)
+    const result = await apiRequest(`/contacts?${params}`)
 
-    if (data.success && data.data?.contacts) {
+    if (result.success && result.data?.contacts) {
       return {
         success: true,
-        members: data.data.contacts.map(contact => ({
+        members: result.data.contacts.map(contact => ({
           id: contact.memberId,
           memberId: contact.memberId,
           t_number: contact.t_number,
@@ -74,12 +48,12 @@ export async function getAllPhoneNumbers(limit = 1000) {
       fields: 'phone'
     })
 
-    const data = await portalFetch(`/contacts?${params}`)
+    const result = await apiRequest(`/contacts?${params}`)
 
-    if (data.success && data.data?.contacts) {
+    if (result.success && result.data?.contacts) {
       return {
         success: true,
-        members: data.data.contacts
+        members: result.data.contacts
           .filter(c => c.phone)
           .map(contact => ({
             id: contact.memberId,
@@ -103,12 +77,12 @@ export async function getAllEmails(limit = 1000) {
       fields: 'email'
     })
 
-    const data = await portalFetch(`/contacts?${params}`)
+    const result = await apiRequest(`/contacts?${params}`)
 
-    if (data.success && data.data?.contacts) {
+    if (result.success && result.data?.contacts) {
       return {
         success: true,
-        members: data.data.contacts
+        members: result.data.contacts
           .filter(c => c.email)
           .map(contact => ({
             id: contact.memberId,
@@ -126,8 +100,11 @@ export async function getAllEmails(limit = 1000) {
 
 export async function testConnection() {
   try {
-    await portalFetch('/health')
-    return { success: true, message: 'Portal API connected' }
+    const result = await apiRequest('/health')
+    if (result.success) {
+      return { success: true, message: 'Portal API connected' }
+    }
+    return { success: false, error: result.error || 'Connection failed' }
   } catch (error) {
     return { success: false, error: error.message }
   }

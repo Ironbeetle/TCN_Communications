@@ -1,25 +1,105 @@
 import { app, ipcMain, BrowserWindow } from "electron";
 import path, { join } from "path";
-import bcrypt from "bcryptjs";
+import { fileURLToPath } from "url";
+import { config } from "dotenv";
 import Store from "electron-store";
-import { PrismaClient } from "@prisma/client";
 import { mkdir, writeFile } from "fs/promises";
 import __cjs_mod__ from "node:module";
 const __filename = import.meta.filename;
 const __dirname = import.meta.dirname;
 const require2 = __cjs_mod__.createRequire(import.meta.url);
-let prisma = null;
-function getPrisma() {
-  if (!prisma) {
-    prisma = new PrismaClient();
-  }
-  return prisma;
+function getPortalConfig() {
+  const baseUrl = process.env.PORTAL_API_URL || process.env.TCN_PORTAL_URL;
+  const apiKey = process.env.PORTAL_API_KEY || process.env.TCN_PORTAL_API_KEY;
+  const normalizedUrl = baseUrl ? baseUrl.replace(/\/api\/sync\/?$/i, "") : baseUrl;
+  return { baseUrl: normalizedUrl, apiKey };
 }
-async function disconnectPrisma() {
-  if (prisma) {
-    await prisma.$disconnect();
-    prisma = null;
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+async function apiRequest(endpoint, options = {}) {
+  const { baseUrl, apiKey } = getPortalConfig();
+  const maxRetries = options.retries ?? 2;
+  const retryDelay = options.retryDelay ?? 1e3;
+  const { retries, retryDelay: _, ...fetchOptions } = options;
+  if (!baseUrl || !apiKey) {
+    console.error("Portal not configured. baseUrl:", baseUrl ? "[SET]" : "[NOT SET]", "apiKey:", apiKey ? "[SET]" : "[NOT SET]");
+    return { success: false, error: "VPS API not configured. Please check your environment settings." };
   }
+  const url = `${baseUrl}${endpoint}`;
+  const method = fetchOptions.method || "GET";
+  let lastError = null;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    if (process.env.NODE_ENV !== "production") {
+      if (attempt > 0) {
+        console.log(`API Request retry ${attempt}/${maxRetries}: ${method} ${url}`);
+      } else {
+        console.log(`API Request: ${method} ${url}`);
+      }
+    }
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 3e4);
+      const response = await fetch(url, {
+        ...fetchOptions,
+        signal: controller.signal,
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": apiKey,
+          "x-source": "tcn-comm",
+          ...fetchOptions.headers
+        }
+      });
+      clearTimeout(timeoutId);
+      const text = await response.text();
+      if (process.env.NODE_ENV !== "production") {
+        console.log("API Response status:", response.status);
+      }
+      if (!response.ok) {
+        if (response.status >= 400 && response.status < 500) {
+          let errorMessage = `API error: ${response.status}`;
+          try {
+            const errorData = JSON.parse(text);
+            errorMessage = errorData.error || errorData.message || errorMessage;
+          } catch {
+            if (text) errorMessage = text.substring(0, 200);
+          }
+          return { success: false, error: errorMessage };
+        }
+        throw new Error(`Server error: ${response.status} - ${text.substring(0, 200)}`);
+      }
+      if (!text || text.trim() === "") {
+        return { success: true, data: null };
+      }
+      const result = JSON.parse(text);
+      return result;
+    } catch (error) {
+      lastError = error;
+      if (error.name === "AbortError") {
+        console.error("API request timed out:", endpoint);
+        lastError = new Error("Request timed out. Please try again.");
+      } else if (error.message.includes("fetch") || error.message.includes("network")) {
+        console.error("Network error:", error);
+        lastError = new Error("Network error. Please check your connection.");
+      }
+      if (attempt < maxRetries) {
+        console.log(`Retrying in ${retryDelay}ms...`);
+        await sleep(retryDelay * (attempt + 1));
+      }
+    }
+  }
+  console.error("API request failed after retries:", lastError);
+  return { success: false, error: lastError?.message || "Request failed after retries" };
+}
+function extractArray(result, ...keys) {
+  if (!result) return [];
+  for (const key of keys) {
+    if (Array.isArray(result[key])) {
+      return result[key];
+    }
+  }
+  if (Array.isArray(result)) {
+    return result;
+  }
+  return [];
 }
 let store;
 try {
@@ -41,69 +121,28 @@ try {
     }
   };
 }
-const MAX_LOGIN_ATTEMPTS = 5;
-const LOCKOUT_DURATION = 30 * 60 * 1e3;
 async function login(email, password) {
-  const prisma2 = getPrisma();
   try {
     console.log("Attempting login for:", email);
-    const user = await prisma2.user.findUnique({
-      where: { email: email.toLowerCase() }
+    const result = await apiRequest("/api/comm/auth/login", {
+      method: "POST",
+      body: JSON.stringify({
+        email: email.toLowerCase(),
+        password
+      })
     });
-    if (!user) {
-      return { success: false, error: "Invalid email or password" };
+    if (!result.success) {
+      return { success: false, error: result.error || "Invalid email or password" };
     }
-    if (user.lockedUntil && new Date(user.lockedUntil) > /* @__PURE__ */ new Date()) {
-      const remainingTime = Math.ceil((new Date(user.lockedUntil) - /* @__PURE__ */ new Date()) / 6e4);
-      return {
-        success: false,
-        error: `Account locked. Try again in ${remainingTime} minutes.`
-      };
-    }
-    const isValid = await bcrypt.compare(password, user.password);
-    if (!isValid) {
-      const newAttempts = user.loginAttempts + 1;
-      const updateData = { loginAttempts: newAttempts };
-      if (newAttempts >= MAX_LOGIN_ATTEMPTS) {
-        updateData.lockedUntil = new Date(Date.now() + LOCKOUT_DURATION);
-      }
-      await prisma2.user.update({
-        where: { id: user.id },
-        data: updateData
-      });
-      await prisma2.loginLog.create({
-        data: {
-          userId: user.id,
-          department: user.department,
-          success: false,
-          failReason: "Invalid password"
-        }
-      });
-      return { success: false, error: "Invalid email or password" };
-    }
-    await prisma2.user.update({
-      where: { id: user.id },
-      data: {
-        loginAttempts: 0,
-        lockedUntil: null,
-        lastLogin: /* @__PURE__ */ new Date()
-      }
-    });
-    await prisma2.loginLog.create({
-      data: {
-        userId: user.id,
-        department: user.department,
-        success: true
-      }
-    });
     const sessionData = {
-      id: user.id,
-      email: user.email,
-      first_name: user.first_name,
-      last_name: user.last_name,
-      name: `${user.first_name} ${user.last_name}`,
-      department: user.department,
-      role: user.role,
+      id: result.data.user.id,
+      email: result.data.user.email,
+      first_name: result.data.user.first_name,
+      last_name: result.data.user.last_name,
+      name: `${result.data.user.first_name} ${result.data.user.last_name}`,
+      department: result.data.user.department,
+      role: result.data.user.role,
+      sessionToken: result.data.sessionToken,
       loggedInAt: (/* @__PURE__ */ new Date()).toISOString()
     };
     store.set("currentUser", sessionData);
@@ -113,7 +152,20 @@ async function login(email, password) {
     return { success: false, error: "An error occurred during login" };
   }
 }
-function logout() {
+async function logout() {
+  try {
+    const currentUser = store.get("currentUser");
+    if (currentUser?.sessionToken) {
+      await apiRequest("/api/comm/auth/logout", {
+        method: "POST",
+        body: JSON.stringify({
+          sessionToken: currentUser.sessionToken
+        })
+      });
+    }
+  } catch (error) {
+    console.error("Logout API error (continuing anyway):", error);
+  }
   store.delete("currentUser");
   return { success: true };
 }
@@ -124,55 +176,37 @@ function isAuthenticated() {
   return !!store.get("currentUser");
 }
 async function createUser(userData) {
-  const prisma2 = getPrisma();
   try {
-    const hashedPassword = await bcrypt.hash(userData.password, 10);
-    const user = await prisma2.user.create({
-      data: {
+    const result = await apiRequest("/api/comm/users", {
+      method: "POST",
+      body: JSON.stringify({
         email: userData.email.toLowerCase(),
-        password: hashedPassword,
+        password: userData.password,
         first_name: userData.first_name,
         last_name: userData.last_name,
         department: userData.department || "BAND_OFFICE",
         role: userData.role || "STAFF"
-      }
+      })
     });
+    if (!result.success) {
+      return { success: false, error: result.error || "Failed to create user" };
+    }
     return {
       success: true,
-      user: {
-        id: user.id,
-        email: user.email,
-        first_name: user.first_name,
-        last_name: user.last_name,
-        department: user.department,
-        role: user.role
-      }
+      user: result.data
     };
   } catch (error) {
-    if (error.code === "P2002") {
-      return { success: false, error: "Email already exists" };
-    }
     console.error("Create user error:", error);
     return { success: false, error: "Failed to create user" };
   }
 }
 async function getAllUsers() {
-  const prisma2 = getPrisma();
   try {
-    const users = await prisma2.user.findMany({
-      select: {
-        id: true,
-        email: true,
-        first_name: true,
-        last_name: true,
-        department: true,
-        role: true,
-        created: true,
-        lastLogin: true
-      },
-      orderBy: { created: "desc" }
-    });
-    return { success: true, users };
+    const result = await apiRequest("/api/comm/users");
+    if (!result.success) {
+      return { success: false, error: result.error || "Failed to fetch users" };
+    }
+    return { success: true, users: result.data };
   } catch (error) {
     console.error("Get users error:", error);
     return { success: false, error: "Failed to fetch users" };
@@ -202,7 +236,6 @@ function formatPhoneNumber(phone) {
   return phone.startsWith("+") ? phone : `+${digits}`;
 }
 async function sendSms({ message, recipients, userId }) {
-  const prisma2 = getPrisma();
   const results = {
     successful: 0,
     failed: 0,
@@ -240,15 +273,16 @@ async function sendSms({ message, recipients, userId }) {
     } else if (results.failed === results.total) {
       status = "failed";
     }
-    await prisma2.smsLog.create({
-      data: {
+    await apiRequest("/api/comm/sms-logs", {
+      method: "POST",
+      body: JSON.stringify({
         message,
-        recipients: JSON.stringify(recipients),
+        recipients,
         status,
-        messageIds: JSON.stringify(results.messageIds),
+        messageIds: results.messageIds,
         error: results.errors.length > 0 ? JSON.stringify(results.errors) : null,
         userId
-      }
+      })
     });
     return {
       success: status !== "failed",
@@ -256,15 +290,16 @@ async function sendSms({ message, recipients, userId }) {
       results
     };
   } catch (error) {
-    await prisma2.smsLog.create({
-      data: {
+    await apiRequest("/api/comm/sms-logs", {
+      method: "POST",
+      body: JSON.stringify({
         message,
-        recipients: JSON.stringify(recipients),
+        recipients,
         status: "failed",
-        messageIds: "[]",
+        messageIds: [],
         error: error.message,
         userId
-      }
+      })
     });
     return {
       success: false,
@@ -274,30 +309,13 @@ async function sendSms({ message, recipients, userId }) {
   }
 }
 async function getSmsHistory(userId, limit = 50) {
-  const prisma2 = getPrisma();
   try {
-    const logs = await prisma2.smsLog.findMany({
-      where: userId ? { userId } : {},
-      orderBy: { created: "desc" },
-      take: limit,
-      include: {
-        user: {
-          select: {
-            first_name: true,
-            last_name: true,
-            email: true
-          }
-        }
-      }
-    });
-    return {
-      success: true,
-      logs: logs.map((log) => ({
-        ...log,
-        recipients: JSON.parse(log.recipients),
-        messageIds: JSON.parse(log.messageIds)
-      }))
-    };
+    const endpoint = userId ? `/api/comm/sms-logs?userId=${userId}&limit=${limit}` : `/api/comm/sms-logs?limit=${limit}`;
+    const result = await apiRequest(endpoint);
+    if (!result.success) {
+      return { success: false, error: result.error || "Failed to fetch SMS history" };
+    }
+    return { success: true, logs: result.data };
   } catch (error) {
     return { success: false, error: error.message };
   }
@@ -366,7 +384,6 @@ function createHtmlTemplate(message, subject) {
   `;
 }
 async function sendEmail({ subject, message, recipients, attachments, userId }) {
-  const prisma2 = getPrisma();
   const results = {
     successful: 0,
     failed: 0,
@@ -385,7 +402,6 @@ async function sendEmail({ subject, message, recipients, attachments, userId }) 
     const emailAttachments = attachments?.map((att) => ({
       filename: att.filename,
       content: att.content
-      // Base64 encoded content
     })) || [];
     for (const recipient of recipients) {
       try {
@@ -417,17 +433,18 @@ async function sendEmail({ subject, message, recipients, attachments, userId }) 
     } else if (results.failed === results.total) {
       status = "failed";
     }
-    await prisma2.emailLog.create({
-      data: {
+    await apiRequest("/api/comm/email-logs", {
+      method: "POST",
+      body: JSON.stringify({
         subject,
         message,
-        recipients: JSON.stringify(recipients),
+        recipients,
         status,
         messageId: results.messageId,
         error: results.errors.length > 0 ? JSON.stringify(results.errors) : null,
-        attachments: attachments ? JSON.stringify({ files: attachments.map((a) => ({ filename: a.filename, size: a.size })) }) : null,
+        attachments: attachments ? attachments.map((a) => ({ filename: a.filename, size: a.size })) : null,
         userId
-      }
+      })
     });
     return {
       success: status !== "failed",
@@ -435,15 +452,16 @@ async function sendEmail({ subject, message, recipients, attachments, userId }) 
       results
     };
   } catch (error) {
-    await prisma2.emailLog.create({
-      data: {
+    await apiRequest("/api/comm/email-logs", {
+      method: "POST",
+      body: JSON.stringify({
         subject,
         message,
-        recipients: JSON.stringify(recipients),
+        recipients,
         status: "failed",
         error: error.message,
         userId
-      }
+      })
     });
     return {
       success: false,
@@ -453,53 +471,16 @@ async function sendEmail({ subject, message, recipients, attachments, userId }) 
   }
 }
 async function getEmailHistory(userId, limit = 50) {
-  const prisma2 = getPrisma();
   try {
-    const logs = await prisma2.emailLog.findMany({
-      where: userId ? { userId } : {},
-      orderBy: { created: "desc" },
-      take: limit,
-      include: {
-        user: {
-          select: {
-            first_name: true,
-            last_name: true,
-            email: true
-          }
-        }
-      }
-    });
-    return {
-      success: true,
-      logs: logs.map((log) => ({
-        ...log,
-        recipients: JSON.parse(log.recipients),
-        attachments: log.attachments ? JSON.parse(log.attachments) : null
-      }))
-    };
+    const endpoint = userId ? `/api/comm/email-logs?userId=${userId}&limit=${limit}` : `/api/comm/email-logs?limit=${limit}`;
+    const result = await apiRequest(endpoint);
+    if (!result.success) {
+      return { success: false, error: result.error || "Failed to fetch email history" };
+    }
+    return { success: true, logs: result.data };
   } catch (error) {
     return { success: false, error: error.message };
   }
-}
-async function portalFetch(endpoint, options = {}) {
-  const baseUrl = process.env.PORTAL_API_URL;
-  const apiKey = process.env.PORTAL_API_KEY;
-  if (!baseUrl || !apiKey) {
-    throw new Error("Portal API not configured");
-  }
-  const response = await fetch(`${baseUrl}${endpoint}`, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      "X-API-Key": apiKey,
-      "X-Source": "tcn-comm",
-      ...options.headers
-    }
-  });
-  if (!response.ok) {
-    throw new Error(`Portal API error: ${response.status}`);
-  }
-  return response.json();
 }
 async function searchMembers(searchTerm, limit = 50) {
   try {
@@ -509,11 +490,11 @@ async function searchMembers(searchTerm, limit = 50) {
       activated: "true",
       fields: "both"
     });
-    const data = await portalFetch(`/contacts?${params}`);
-    if (data.success && data.data?.contacts) {
+    const result = await apiRequest(`/contacts?${params}`);
+    if (result.success && result.data?.contacts) {
       return {
         success: true,
-        members: data.data.contacts.map((contact) => ({
+        members: result.data.contacts.map((contact) => ({
           id: contact.memberId,
           memberId: contact.memberId,
           t_number: contact.t_number,
@@ -542,11 +523,11 @@ async function getAllPhoneNumbers(limit = 1e3) {
       activated: "true",
       fields: "phone"
     });
-    const data = await portalFetch(`/contacts?${params}`);
-    if (data.success && data.data?.contacts) {
+    const result = await apiRequest(`/contacts?${params}`);
+    if (result.success && result.data?.contacts) {
       return {
         success: true,
-        members: data.data.contacts.filter((c) => c.phone).map((contact) => ({
+        members: result.data.contacts.filter((c) => c.phone).map((contact) => ({
           id: contact.memberId,
           name: contact.name || `${contact.firstName} ${contact.lastName}`,
           phone: contact.phone
@@ -565,11 +546,11 @@ async function getAllEmails(limit = 1e3) {
       activated: "true",
       fields: "email"
     });
-    const data = await portalFetch(`/contacts?${params}`);
-    if (data.success && data.data?.contacts) {
+    const result = await apiRequest(`/contacts?${params}`);
+    if (result.success && result.data?.contacts) {
       return {
         success: true,
-        members: data.data.contacts.filter((c) => c.email).map((contact) => ({
+        members: result.data.contacts.filter((c) => c.email).map((contact) => ({
           id: contact.memberId,
           name: contact.name || `${contact.firstName} ${contact.lastName}`,
           email: contact.email
@@ -583,17 +564,15 @@ async function getAllEmails(limit = 1e3) {
 }
 async function testConnection() {
   try {
-    await portalFetch("/health");
-    return { success: true, message: "Portal API connected" };
+    const result = await apiRequest("/health");
+    if (result.success) {
+      return { success: true, message: "Portal API connected" };
+    }
+    return { success: false, error: result.error || "Connection failed" };
   } catch (error) {
     return { success: false, error: error.message };
   }
 }
-const getPortalConfig$1 = () => {
-  const baseUrl = process.env.PORTAL_API_URL || process.env.TCN_PORTAL_URL;
-  const apiKey = process.env.PORTAL_API_KEY || process.env.TCN_PORTAL_API_KEY;
-  return { baseUrl, apiKey };
-};
 function createMultipartFormData(fields, file) {
   const boundary = "----FormBoundary" + Math.random().toString(36).substring(2);
   const parts = [];
@@ -625,13 +604,13 @@ Content-Type: ${file.contentType}\r
     contentType: `multipart/form-data; boundary=${boundary}`
   };
 }
-async function uploadPoster({ sourceId, filename, data, mimeType }) {
-  const { baseUrl, apiKey } = getPortalConfig$1();
+async function uploadPoster({ sourceId, filename, data: data2, mimeType }) {
+  const { baseUrl, apiKey } = getPortalConfig();
   try {
     if (!baseUrl || !apiKey) {
       const uploadsDir = join(app.getPath("userData"), "uploads", "posters");
       await mkdir(uploadsDir, { recursive: true });
-      const base64Data2 = data.replace(/^data:image\/\w+;base64,/, "");
+      const base64Data2 = data2.replace(/^data:image\/\w+;base64,/, "");
       const buffer2 = Buffer.from(base64Data2, "base64");
       const ext2 = filename.split(".").pop() || "jpg";
       const localFilename = `${sourceId}.${ext2}`;
@@ -643,25 +622,19 @@ async function uploadPoster({ sourceId, filename, data, mimeType }) {
         message: "Poster saved locally (portal not configured)"
       };
     }
-    const base64Data = data.replace(/^data:image\/\w+;base64,/, "");
+    const base64Data = data2.replace(/^data:image\/\w+;base64,/, "");
     const buffer = Buffer.from(base64Data, "base64");
     const ext = filename.split(".").pop() || "jpg";
     const uploadFilename = `${sourceId}.${ext}`;
     const { body, contentType } = createMultipartFormData(
-      {
-        sourceId,
-        filename
-      },
-      {
-        filename: uploadFilename,
-        contentType: mimeType || "image/jpeg",
-        data: buffer
-      }
+      { sourceId, filename },
+      { filename: uploadFilename, contentType: mimeType || "image/jpeg", data: buffer }
     );
-    const response = await fetch(`${baseUrl}/poster`, {
+    const response = await fetch(`${baseUrl}/api/comm/bulletin/poster`, {
       method: "POST",
       headers: {
         "x-api-key": apiKey,
+        "x-source": "tcn-comm",
         "Content-Type": contentType
       },
       body
@@ -687,157 +660,72 @@ async function uploadPoster({ sourceId, filename, data, mimeType }) {
     };
   }
 }
-async function syncBulletinToPortal({ sourceId, title, subject, poster_url, category, userId, created }) {
-  const { baseUrl, apiKey } = getPortalConfig$1();
-  if (!baseUrl || !apiKey) {
-    return { success: false, message: "Portal API not configured" };
+async function createBulletin({ title, subject, category, posterFile, userId }) {
+  if (!posterFile || !posterFile.data) {
+    return { success: false, message: "Poster image is required" };
   }
   try {
-    const response = await fetch(`${baseUrl}/bulletin`, {
+    const createResult = await apiRequest("/api/comm/bulletin", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": apiKey
-      },
       body: JSON.stringify({
-        sourceId,
         title,
         subject,
-        poster_url,
-        category,
+        category: category || "ANNOUNCEMENTS",
         userId,
-        created
+        poster_url: ""
+        // Will update after upload
       })
     });
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Sync failed: ${response.status} - ${errorText}`);
+    if (!createResult.success) {
+      return { success: false, message: createResult.error || "Failed to create bulletin" };
     }
-    const result = await response.json();
-    if (!result.success) {
-      throw new Error(result.message || "Sync failed");
-    }
-    return {
-      success: true,
-      data: result.data,
-      message: "Bulletin synced successfully"
-    };
-  } catch (error) {
-    console.error("Sync bulletin error:", error);
-    return {
-      success: false,
-      message: error.message || "Failed to sync bulletin"
-    };
-  }
-}
-async function createBulletin({ title, subject, category, posterFile, userId }) {
-  const prisma2 = getPrisma();
-  if (!posterFile || !posterFile.data) {
-    return {
-      success: false,
-      message: "Poster image is required"
-    };
-  }
-  try {
-    const localBulletin = await prisma2.bulletinApiLog.create({
-      data: {
-        title,
-        subject,
-        poster_url: "",
-        // Will update after upload
-        category: category || "ANNOUNCEMENTS",
-        userId
-      }
-    });
-    const sourceId = localBulletin.id;
+    const bulletinId = createResult.data.id;
     const uploadResult = await uploadPoster({
-      sourceId,
+      sourceId: bulletinId,
       filename: posterFile.filename,
       data: posterFile.data,
       mimeType: posterFile.mimeType
     });
     if (!uploadResult.success) {
-      await prisma2.bulletinApiLog.delete({ where: { id: sourceId } });
-      return {
-        success: false,
-        message: `Failed to upload poster: ${uploadResult.message}`
-      };
+      await apiRequest(`/api/comm/bulletin/${bulletinId}`, { method: "DELETE" });
+      return { success: false, message: `Failed to upload poster: ${uploadResult.message}` };
     }
-    const poster_url = uploadResult.poster_url;
-    await prisma2.bulletinApiLog.update({
-      where: { id: sourceId },
-      data: { poster_url }
+    const updateResult = await apiRequest(`/api/comm/bulletin/${bulletinId}`, {
+      method: "PUT",
+      body: JSON.stringify({ poster_url: uploadResult.poster_url })
     });
-    const syncResult = await syncBulletinToPortal({
-      sourceId,
-      title,
-      subject,
-      poster_url,
-      category: category || "ANNOUNCEMENTS",
-      userId,
-      created: localBulletin.created.toISOString()
-    });
-    if (!syncResult.success) {
+    if (!updateResult.success) {
       return {
         success: false,
-        message: `Poster uploaded but sync failed: ${syncResult.message}`,
-        bulletin: {
-          id: sourceId,
-          title,
-          subject,
-          poster_url,
-          category,
-          synced: false
-        }
+        message: "Poster uploaded but failed to update bulletin",
+        bulletin: { id: bulletinId, title, subject, poster_url: uploadResult.poster_url, synced: false }
       };
     }
     return {
       success: true,
       message: "Bulletin posted successfully",
       bulletin: {
-        id: sourceId,
-        portalId: syncResult.data?.id,
+        id: bulletinId,
         title,
         subject,
-        poster_url,
+        poster_url: uploadResult.poster_url,
         category,
         synced: true
       }
     };
   } catch (error) {
     console.error("Create bulletin error:", error);
-    return {
-      success: false,
-      message: error.message || "Failed to post bulletin"
-    };
+    return { success: false, message: error.message || "Failed to post bulletin" };
   }
 }
-async function deleteBulletin(sourceId) {
-  const prisma2 = getPrisma();
-  const { baseUrl, apiKey } = getPortalConfig$1();
+async function deleteBulletin(bulletinId) {
   try {
-    if (baseUrl && apiKey) {
-      const response = await fetch(`${baseUrl}/bulletin`, {
-        method: "DELETE",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": apiKey
-        },
-        body: JSON.stringify({ sourceId })
-      });
-      if (!response.ok) {
-        console.error("Failed to delete from portal:", await response.text());
-      }
-      await fetch(`${baseUrl}/poster`, {
-        method: "DELETE",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": apiKey
-        },
-        body: JSON.stringify({ sourceId })
-      });
+    const result = await apiRequest(`/api/comm/bulletin/${bulletinId}`, {
+      method: "DELETE"
+    });
+    if (!result.success) {
+      return { success: false, message: result.error || "Failed to delete bulletin" };
     }
-    await prisma2.bulletinApiLog.delete({ where: { id: sourceId } });
     return { success: true, message: "Bulletin deleted successfully" };
   } catch (error) {
     console.error("Delete bulletin error:", error);
@@ -845,153 +733,47 @@ async function deleteBulletin(sourceId) {
   }
 }
 async function getBulletinHistory(userId, limit = 50) {
-  const prisma2 = getPrisma();
   try {
-    const logs = await prisma2.bulletinApiLog.findMany({
-      where: userId ? { userId } : {},
-      orderBy: { created: "desc" },
-      take: limit,
-      include: {
-        user: {
-          select: {
-            first_name: true,
-            last_name: true,
-            email: true
-          }
-        }
-      }
-    });
-    return { success: true, logs };
+    const endpoint = userId ? `/api/comm/bulletin?userId=${userId}&limit=${limit}` : `/api/comm/bulletin?limit=${limit}`;
+    const result = await apiRequest(endpoint);
+    if (!result.success) {
+      return { success: false, error: result.error || "Failed to fetch bulletins", logs: [] };
+    }
+    return { success: true, logs: result.data };
   } catch (error) {
     console.error("Get bulletin history error:", error);
     return { success: false, error: error.message, logs: [] };
   }
 }
-const getPortalConfig = () => {
-  const baseUrl = process.env.TCN_PORTAL_URL || process.env.PORTAL_API_URL?.replace("/api/sync", "");
-  const apiKey = process.env.TCN_PORTAL_API_KEY || process.env.PORTAL_API_KEY;
-  return { baseUrl, apiKey };
-};
-async function syncFormToPortal(form) {
-  const { baseUrl, apiKey } = getPortalConfig();
-  if (!baseUrl || !apiKey) {
-    console.error("Portal not configured. baseUrl:", baseUrl, "apiKey:", apiKey ? "[SET]" : "[NOT SET]");
-    return { success: false, error: "Portal not configured" };
-  }
-  try {
-    const endpoint = form.portalFormId ? `${baseUrl}/api/signup-forms/${form.portalFormId}` : `${baseUrl}/api/signup-forms`;
-    const method = form.portalFormId ? "PATCH" : "POST";
-    console.log(`Syncing form to portal: ${method} ${endpoint}`);
-    const response = await fetch(endpoint, {
-      method,
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": apiKey,
-        "x-source": "tcn-comm"
-      },
-      body: JSON.stringify({
-        formId: form.id,
-        title: form.title,
-        description: form.description,
-        deadline: form.deadline,
-        maxEntries: form.maxEntries,
-        isActive: form.isActive,
-        category: form.category || "BAND_OFFICE",
-        allowResubmit: form.allowResubmit || false,
-        resubmitMessage: form.resubmitMessage || null,
-        createdBy: form.createdBy,
-        fields: form.fields.map((f) => ({
-          fieldId: f.fieldId,
-          label: f.label,
-          fieldType: f.fieldType,
-          options: f.options ? typeof f.options === "string" ? JSON.parse(f.options) : f.options : null,
-          placeholder: f.placeholder,
-          required: f.required,
-          order: f.order
-        }))
-      })
-    });
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Portal sync failed: ${response.status} - ${errorText}`);
-    }
-    const result = await response.json();
-    return {
-      success: true,
-      portalFormId: result.data?.id || result.portalFormId,
-      data: result.data
-    };
-  } catch (error) {
-    console.error("Portal sync error:", error);
-    return { success: false, error: error.message };
-  }
-}
-async function deleteFormFromPortal(portalFormId) {
-  const { baseUrl, apiKey } = getPortalConfig();
-  if (!baseUrl || !apiKey || !portalFormId) {
-    return { success: false };
-  }
-  try {
-    const response = await fetch(`${baseUrl}/api/signup-forms/${portalFormId}`, {
-      method: "DELETE",
-      headers: {
-        "x-api-key": apiKey,
-        "x-source": "tcn-comm"
-      }
-    });
-    return { success: response.ok };
-  } catch (error) {
-    console.error("Portal delete error:", error);
-    return { success: false, error: error.message };
-  }
-}
 async function createForm({ title, description, category, deadline, maxEntries, allowResubmit, resubmitMessage, fields, userId }) {
-  const prisma2 = getPrisma();
   try {
-    const form = await prisma2.signUpForm.create({
-      data: {
+    const result = await apiRequest("/api/comm/signup-forms", {
+      method: "POST",
+      body: JSON.stringify({
         title,
         description: description || null,
         category: category || "BAND_OFFICE",
-        deadline: deadline ? new Date(deadline) : null,
+        deadline: deadline ? new Date(deadline).toISOString() : null,
         maxEntries: maxEntries || null,
         isActive: true,
         allowResubmit: allowResubmit || false,
         resubmitMessage: resubmitMessage || null,
         createdBy: userId,
-        fields: {
-          create: fields.map((field, index) => ({
-            fieldId: field.fieldId || generateFieldId(field.label),
-            label: field.label,
-            fieldType: field.fieldType,
-            options: field.options ? JSON.stringify(field.options) : null,
-            placeholder: field.placeholder || null,
-            required: field.required || false,
-            order: index
-          }))
-        }
-      },
-      include: {
-        fields: { orderBy: { order: "asc" } }
-      }
+        fields: fields.map((field, index) => ({
+          fieldId: field.fieldId || generateFieldId(field.label),
+          label: field.label,
+          fieldType: field.fieldType,
+          options: field.options || null,
+          placeholder: field.placeholder || null,
+          required: field.required || false,
+          order: index
+        }))
+      })
     });
-    const syncResult = await syncFormToPortal(form);
-    if (syncResult.success && syncResult.portalFormId) {
-      await prisma2.signUpForm.update({
-        where: { id: form.id },
-        data: {
-          portalFormId: syncResult.portalFormId,
-          syncedAt: /* @__PURE__ */ new Date()
-        }
-      });
+    if (!result.success) {
+      return { success: false, message: result.error || "Failed to create form" };
     }
-    return {
-      success: true,
-      form,
-      portalSynced: syncResult.success,
-      portalFormId: syncResult.portalFormId,
-      portalError: syncResult.error
-    };
+    return { success: true, form: result.data };
   } catch (error) {
     console.error("Create form error:", error);
     return { success: false, message: error.message };
@@ -1001,69 +783,46 @@ function generateFieldId(label) {
   return label.toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, "");
 }
 async function updateForm({ formId, title, description, category, deadline, maxEntries, isActive, allowResubmit, resubmitMessage, fields }) {
-  const prisma2 = getPrisma();
   try {
-    await prisma2.formField.deleteMany({
-      where: { formId }
-    });
-    const form = await prisma2.signUpForm.update({
-      where: { id: formId },
-      data: {
+    const result = await apiRequest(`/api/comm/signup-forms/${formId}`, {
+      method: "PUT",
+      body: JSON.stringify({
         title,
         description: description || null,
         category: category || "BAND_OFFICE",
-        deadline: deadline ? new Date(deadline) : null,
+        deadline: deadline ? new Date(deadline).toISOString() : null,
         maxEntries: maxEntries || null,
         isActive,
         allowResubmit: allowResubmit || false,
         resubmitMessage: resubmitMessage || null,
-        fields: {
-          create: fields.map((field, index) => ({
-            fieldId: field.fieldId || generateFieldId(field.label),
-            label: field.label,
-            fieldType: field.fieldType,
-            options: field.options ? JSON.stringify(field.options) : null,
-            placeholder: field.placeholder || null,
-            required: field.required || false,
-            order: index
-          }))
-        }
-      },
-      include: {
-        fields: { orderBy: { order: "asc" } }
-      }
+        fields: fields.map((field, index) => ({
+          fieldId: field.fieldId || generateFieldId(field.label),
+          label: field.label,
+          fieldType: field.fieldType,
+          options: field.options || null,
+          placeholder: field.placeholder || null,
+          required: field.required || false,
+          order: index
+        }))
+      })
     });
-    const syncResult = await syncFormToPortal(form);
-    if (syncResult.success) {
-      await prisma2.signUpForm.update({
-        where: { id: form.id },
-        data: { syncedAt: /* @__PURE__ */ new Date() }
-      });
+    if (!result.success) {
+      return { success: false, message: result.error || "Failed to update form" };
     }
-    return {
-      success: true,
-      form,
-      portalSynced: syncResult.success,
-      portalError: syncResult.error
-    };
+    return { success: true, form: result.data };
   } catch (error) {
     console.error("Update form error:", error);
     return { success: false, message: error.message };
   }
 }
 async function deleteForm(formId) {
-  const prisma2 = getPrisma();
   try {
-    const form = await prisma2.signUpForm.findUnique({
-      where: { id: formId },
-      select: { portalFormId: true }
+    const result = await apiRequest(`/api/comm/signup-forms/${formId}`, {
+      method: "DELETE"
     });
-    if (form?.portalFormId) {
-      await deleteFormFromPortal(form.portalFormId);
+    if (!result.success) {
+      return { success: false, message: result.error || "Failed to delete form" };
     }
-    await prisma2.signUpForm.delete({
-      where: { id: formId }
-    });
     return { success: true };
   } catch (error) {
     console.error("Delete form error:", error);
@@ -1071,55 +830,26 @@ async function deleteForm(formId) {
   }
 }
 async function getForm(formId) {
-  const prisma2 = getPrisma();
   try {
-    const form = await prisma2.signUpForm.findUnique({
-      where: { id: formId },
-      include: {
-        fields: { orderBy: { order: "asc" } },
-        submissions: { orderBy: { submittedAt: "desc" } },
-        creator: {
-          select: {
-            first_name: true,
-            last_name: true,
-            email: true
-          }
-        }
-      }
-    });
-    if (!form) {
-      return { success: false, message: "Form not found" };
+    const result = await apiRequest(`/api/comm/signup-forms/${formId}`);
+    if (!result.success) {
+      return { success: false, message: result.error || "Form not found" };
     }
-    const formWithParsedFields = {
-      ...form,
-      fields: form.fields.map((f) => ({
-        ...f,
-        options: f.options ? JSON.parse(f.options) : null
-      }))
-    };
-    return { success: true, form: formWithParsedFields };
+    return { success: true, form: result.data };
   } catch (error) {
     console.error("Get form error:", error);
     return { success: false, message: error.message };
   }
 }
 async function getAllForms(userId = null) {
-  const prisma2 = getPrisma();
   try {
-    const forms = await prisma2.signUpForm.findMany({
-      where: userId ? { createdBy: userId } : {},
-      orderBy: { createdAt: "desc" },
-      include: {
-        fields: { orderBy: { order: "asc" } },
-        _count: { select: { submissions: true } },
-        creator: {
-          select: {
-            first_name: true,
-            last_name: true
-          }
-        }
-      }
-    });
+    const endpoint = userId ? `/api/comm/signup-forms?userId=${userId}` : "/api/comm/signup-forms";
+    const result = await apiRequest(endpoint);
+    console.log("Forms API result:", JSON.stringify(result, null, 2));
+    if (!result.success) {
+      return { success: false, message: result.error || "Failed to fetch forms", forms: [] };
+    }
+    const forms = Array.isArray(result.data) ? result.data : Array.isArray(result.forms) ? result.forms : result.data?.forms ? result.data.forms : [];
     return { success: true, forms };
   } catch (error) {
     console.error("Get all forms error:", error);
@@ -1127,63 +857,46 @@ async function getAllForms(userId = null) {
   }
 }
 async function submitForm({ formId, memberId, name, email, phone, responses }) {
-  const prisma2 = getPrisma();
   try {
-    const form = await prisma2.signUpForm.findUnique({
-      where: { id: formId },
-      include: { _count: { select: { submissions: true } } }
-    });
-    if (!form) {
-      return { success: false, message: "Form not found" };
-    }
-    if (!form.isActive) {
-      return { success: false, message: "Form is no longer accepting submissions" };
-    }
-    if (form.deadline && /* @__PURE__ */ new Date() > form.deadline) {
-      return { success: false, message: "Submission deadline has passed" };
-    }
-    if (form.maxEntries && form._count.submissions >= form.maxEntries) {
-      return { success: false, message: "Maximum entries reached" };
-    }
-    const submission = await prisma2.formSubmission.create({
-      data: {
-        formId,
+    const result = await apiRequest(`/api/comm/signup-forms/${formId}/submissions`, {
+      method: "POST",
+      body: JSON.stringify({
         memberId: memberId || null,
         name,
         email: email || null,
         phone: phone || null,
-        responses: JSON.stringify(responses)
-      }
+        responses
+      })
     });
-    return { success: true, submission };
+    if (!result.success) {
+      return { success: false, message: result.error || "Failed to submit form" };
+    }
+    return { success: true, submission: result.data };
   } catch (error) {
     console.error("Submit form error:", error);
     return { success: false, message: error.message };
   }
 }
 async function getFormSubmissions(formId) {
-  const prisma2 = getPrisma();
   try {
-    const submissions = await prisma2.formSubmission.findMany({
-      where: { formId },
-      orderBy: { submittedAt: "desc" }
-    });
-    const parsed = submissions.map((s) => ({
-      ...s,
-      responses: typeof s.responses === "string" ? JSON.parse(s.responses) : s.responses
-    }));
-    return { success: true, submissions: parsed };
+    const result = await apiRequest(`/api/comm/signup-forms/${formId}/submissions`);
+    if (!result.success) {
+      return { success: false, message: result.error || "Failed to fetch submissions", submissions: [] };
+    }
+    return { success: true, submissions: result.data };
   } catch (error) {
     console.error("Get submissions error:", error);
     return { success: false, message: error.message, submissions: [] };
   }
 }
 async function deleteSubmission(submissionId) {
-  const prisma2 = getPrisma();
   try {
-    await prisma2.formSubmission.delete({
-      where: { id: submissionId }
+    const result = await apiRequest(`/api/comm/signup-forms/submissions/${submissionId}`, {
+      method: "DELETE"
     });
+    if (!result.success) {
+      return { success: false, message: result.error || "Failed to delete submission" };
+    }
     return { success: true };
   } catch (error) {
     console.error("Delete submission error:", error);
@@ -1191,88 +904,434 @@ async function deleteSubmission(submissionId) {
   }
 }
 async function syncSubmissions(formId) {
-  const prisma2 = getPrisma();
-  const { baseUrl, apiKey } = getPortalConfig();
-  console.log("=== syncSubmissions called ===");
-  console.log("formId:", formId);
-  console.log("baseUrl:", baseUrl);
-  console.log("apiKey:", apiKey ? "[SET]" : "[NOT SET]");
-  if (!baseUrl || !apiKey) {
-    return { success: false, error: "Portal not configured" };
-  }
   try {
-    const form = await prisma2.signUpForm.findUnique({
-      where: { id: formId },
-      select: { id: true, portalFormId: true, syncedAt: true }
-    });
-    console.log("Local form found:", form);
-    if (!form) {
-      return { success: false, error: "Form not found" };
-    }
-    if (!form.portalFormId) {
-      return { success: false, error: "Form not synced to portal" };
-    }
-    const url = `${baseUrl}/api/signup-forms/submissions?formId=${form.id}`;
-    console.log("Fetching submissions from:", url);
-    const response = await fetch(url, {
-      headers: {
-        "x-api-key": apiKey,
-        "x-source": "tcn-comm"
-      }
-    });
-    console.log("Response status:", response.status);
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("Portal fetch error:", errorText);
-      throw new Error(`Portal fetch failed: ${response.status} - ${errorText}`);
-    }
-    const result = await response.json();
-    console.log("Portal response:", JSON.stringify(result, null, 2));
-    const portalSubmissions = Array.isArray(result) ? result : Array.isArray(result?.data?.submissions) ? result.data.submissions : Array.isArray(result?.submissions) ? result.submissions : Array.isArray(result?.data) ? result.data : [];
-    console.log("Submissions to process:", portalSubmissions.length);
-    let synced = 0;
-    let skipped = 0;
-    for (const sub of portalSubmissions) {
-      const existing = await prisma2.formSubmission.findFirst({
-        where: {
-          formId,
-          name: sub.submitter?.name || sub.name,
-          submittedAt: new Date(sub.submittedAt)
-        }
-      });
-      if (existing) {
-        skipped++;
-        continue;
-      }
-      await prisma2.formSubmission.create({
-        data: {
-          formId,
-          memberId: sub.submitter?.memberId || sub.memberId || null,
-          name: sub.submitter?.name || sub.name,
-          email: sub.submitter?.email || sub.email || null,
-          phone: sub.submitter?.phone || sub.phone || null,
-          responses: JSON.stringify(sub.responses),
-          submittedAt: new Date(sub.submittedAt)
-        }
-      });
-      synced++;
-    }
-    await prisma2.signUpForm.update({
-      where: { id: formId },
-      data: { syncedAt: /* @__PURE__ */ new Date() }
-    });
+    const result = await getFormSubmissions(formId);
     return {
       success: true,
-      synced,
-      skipped,
-      total: portalSubmissions.length,
-      message: `Synced ${synced} submissions, skipped ${skipped} duplicates`
+      synced: result.submissions?.length || 0,
+      skipped: 0,
+      total: result.submissions?.length || 0,
+      message: `Form has ${result.submissions?.length || 0} submissions on VPS`
     };
   } catch (error) {
-    console.error("Sync submissions error:", error);
     return { success: false, error: error.message };
   }
 }
+function getPayPeriodDates(date = /* @__PURE__ */ new Date()) {
+  const referenceDate = /* @__PURE__ */ new Date("2025-01-06");
+  const targetDate = new Date(date);
+  const daysSinceReference = Math.floor((targetDate - referenceDate) / (1e3 * 60 * 60 * 24));
+  const periodIndex = Math.floor(daysSinceReference / 14);
+  const periodStart = new Date(referenceDate);
+  periodStart.setDate(periodStart.getDate() + periodIndex * 14);
+  const periodEnd = new Date(periodStart);
+  periodEnd.setDate(periodEnd.getDate() + 13);
+  return {
+    start: periodStart.toISOString(),
+    end: periodEnd.toISOString()
+  };
+}
+function calculateHoursFromTimes(startTime, endTime, breakMinutes = 0) {
+  if (!startTime || !endTime) return 0;
+  const [startHour, startMin] = startTime.split(":").map(Number);
+  const [endHour, endMin] = endTime.split(":").map(Number);
+  const startMinutes = startHour * 60 + startMin;
+  const endMinutes = endHour * 60 + endMin;
+  let totalMinutes = endMinutes - startMinutes - breakMinutes;
+  if (totalMinutes < 0) totalMinutes = 0;
+  return Math.round(totalMinutes / 60 * 100) / 100;
+}
+async function getOrCreateCurrentTimesheet({ userId }) {
+  try {
+    const { start, end } = getPayPeriodDates(/* @__PURE__ */ new Date());
+    const getResult = await apiRequest(`/api/timesheets/user/${userId}`);
+    if (getResult.success) {
+      const timesheets = Array.isArray(getResult.data) ? getResult.data : Array.isArray(getResult.timesheets) ? getResult.timesheets : [];
+      const currentTimesheet = timesheets.find((ts) => {
+        const tsStart = new Date(ts.payPeriodStart).toDateString();
+        const periodStart = new Date(start).toDateString();
+        return tsStart === periodStart;
+      });
+      if (currentTimesheet) {
+        return { success: true, timesheet: currentTimesheet };
+      }
+    }
+    const createResult = await apiRequest("/api/timesheets", {
+      method: "POST",
+      body: JSON.stringify({
+        userId,
+        payPeriodStart: start,
+        payPeriodEnd: end,
+        dailyHours: {},
+        status: "DRAFT"
+      })
+    });
+    if (createResult.success) {
+      return { success: true, timesheet: createResult.data };
+    }
+    return createResult;
+  } catch (error) {
+    console.error("Error getting/creating timesheet:", error);
+    return { success: false, error: error.message };
+  }
+}
+async function getTimesheetById({ timesheetId }) {
+  return await apiRequest(`/api/timesheets/${timesheetId}`);
+}
+async function getUserTimesheets({ userId, status }) {
+  const endpoint = status ? `/api/timesheets/user/${userId}?status=${status}` : `/api/timesheets/user/${userId}`;
+  return await apiRequest(endpoint);
+}
+async function getAllTimesheets({ status, department }) {
+  const params = new URLSearchParams();
+  if (status) params.append("status", status);
+  if (department) params.append("department", department);
+  const queryString = params.toString();
+  const endpoint = queryString ? `/api/timesheets?${queryString}` : "/api/timesheets";
+  return await apiRequest(endpoint);
+}
+async function saveTimeEntry({ timesheetId, date, startTime, endTime, breakMinutes, totalHours }) {
+  try {
+    const getResult = await apiRequest(`/api/timesheets/${timesheetId}`);
+    if (!getResult.success) {
+      return getResult;
+    }
+    const timesheet = getResult.data;
+    if (timesheet.status !== "DRAFT") {
+      return { success: false, error: "Cannot edit a submitted timesheet" };
+    }
+    const hours = totalHours !== void 0 ? totalHours : calculateHoursFromTimes(startTime, endTime, breakMinutes || 0);
+    const dailyHours = timesheet.dailyHours || {};
+    const dateKey = new Date(date).toISOString().split("T")[0];
+    dailyHours[dateKey] = {
+      startTime,
+      endTime,
+      breakMinutes: breakMinutes || 0,
+      totalHours: hours
+    };
+    let regularHours = 0;
+    Object.values(dailyHours).forEach((entry) => {
+      regularHours += entry.totalHours || 0;
+    });
+    const updateResult = await apiRequest("/api/timesheets", {
+      method: "POST",
+      // Upsert
+      body: JSON.stringify({
+        userId: timesheet.userId,
+        payPeriodStart: timesheet.payPeriodStart,
+        payPeriodEnd: timesheet.payPeriodEnd,
+        dailyHours,
+        regularHours: Math.round(regularHours * 100) / 100,
+        totalHours: Math.round(regularHours * 100) / 100,
+        status: "DRAFT"
+      })
+    });
+    return updateResult;
+  } catch (error) {
+    console.error("Error saving time entry:", error);
+    return { success: false, error: error.message };
+  }
+}
+async function deleteTimeEntry({ timesheetId, date }) {
+  try {
+    const getResult = await apiRequest(`/api/timesheets/${timesheetId}`);
+    if (!getResult.success) {
+      return getResult;
+    }
+    const timesheet = getResult.data;
+    if (timesheet.status !== "DRAFT") {
+      return { success: false, error: "Cannot edit a submitted timesheet" };
+    }
+    const dailyHours = timesheet.dailyHours || {};
+    const dateKey = new Date(date).toISOString().split("T")[0];
+    delete dailyHours[dateKey];
+    let regularHours = 0;
+    Object.values(dailyHours).forEach((entry) => {
+      regularHours += entry.totalHours || 0;
+    });
+    const updateResult = await apiRequest("/api/timesheets", {
+      method: "POST",
+      body: JSON.stringify({
+        userId: timesheet.userId,
+        payPeriodStart: timesheet.payPeriodStart,
+        payPeriodEnd: timesheet.payPeriodEnd,
+        dailyHours,
+        regularHours: Math.round(regularHours * 100) / 100,
+        totalHours: Math.round(regularHours * 100) / 100,
+        status: "DRAFT"
+      })
+    });
+    return updateResult;
+  } catch (error) {
+    console.error("Error deleting time entry:", error);
+    return { success: false, error: error.message };
+  }
+}
+async function submitTimesheet({ timesheetId }) {
+  return await apiRequest(`/api/timesheets/${timesheetId}/submit`, {
+    method: "POST"
+  });
+}
+async function approveTimesheet({ timesheetId, approverId }) {
+  return await apiRequest(`/api/timesheets/${timesheetId}/approve`, {
+    method: "POST",
+    body: JSON.stringify({ approverId })
+  });
+}
+async function rejectTimesheet({ timesheetId, rejecterId, reason }) {
+  return await apiRequest(`/api/timesheets/${timesheetId}/reject`, {
+    method: "POST",
+    body: JSON.stringify({ rejecterId, reason })
+  });
+}
+async function revertToDraft({ timesheetId }) {
+  const getResult = await apiRequest(`/api/timesheets/${timesheetId}`);
+  if (!getResult.success) {
+    return getResult;
+  }
+  const timesheet = getResult.data;
+  if (timesheet.status !== "REJECTED") {
+    return { success: false, error: "Only rejected timesheets can be reverted to draft" };
+  }
+  return await apiRequest("/api/timesheets", {
+    method: "POST",
+    body: JSON.stringify({
+      userId: timesheet.userId,
+      payPeriodStart: timesheet.payPeriodStart,
+      payPeriodEnd: timesheet.payPeriodEnd,
+      dailyHours: timesheet.dailyHours,
+      regularHours: timesheet.regularHours,
+      totalHours: timesheet.totalHours,
+      status: "DRAFT"
+    })
+  });
+}
+async function deleteTimesheet({ timesheetId }) {
+  return await apiRequest(`/api/timesheets/${timesheetId}`, {
+    method: "DELETE"
+  });
+}
+async function getPayPeriodInfo() {
+  const { start, end } = getPayPeriodDates(/* @__PURE__ */ new Date());
+  return {
+    success: true,
+    payPeriod: {
+      start,
+      end,
+      startFormatted: new Date(start).toLocaleDateString(),
+      endFormatted: new Date(end).toLocaleDateString()
+    }
+  };
+}
+async function getTimesheetStats(userId) {
+  const result = await apiRequest(`/api/timesheets/stats/${userId}`);
+  if (result.success) {
+    return result.data;
+  }
+  return { pending: 0, currentPeriod: null };
+}
+const DEFAULT_RATES = {
+  hotelRate: 200,
+  privateRate: 50,
+  breakfastRate: 20.5,
+  lunchRate: 20.1,
+  dinnerRate: 50.65,
+  incidentalRate: 10,
+  personalVehicleRate: 0.5,
+  oneWayWinnipegKm: 904,
+  oneWayThompsonKm: 150,
+  winnipegFlatRate: 450,
+  thompsonFlatRate: 100,
+  taxiFareRate: 17.3
+};
+async function createTravelForm(data2) {
+  const formData = {
+    ...DEFAULT_RATES,
+    ...data2
+  };
+  return await apiRequest("/api/travel-forms", {
+    method: "POST",
+    body: JSON.stringify(formData)
+  });
+}
+async function updateTravelForm(data2) {
+  const { formId, ...updateData } = data2;
+  return await apiRequest(`/api/travel-forms/${formId}`, {
+    method: "PUT",
+    body: JSON.stringify(updateData)
+  });
+}
+async function getTravelFormById({ formId }) {
+  const result = await apiRequest(`/api/travel-forms/${formId}`);
+  if (result.success) {
+    return { success: true, travelForm: result.data };
+  }
+  return result;
+}
+async function getUserTravelForms({ userId, status }) {
+  const endpoint = status && status !== "ALL" ? `/api/travel-forms/user/${userId}?status=${status}` : `/api/travel-forms/user/${userId}`;
+  const result = await apiRequest(endpoint);
+  if (result.success) {
+    return { success: true, travelForms: result.data };
+  }
+  return result;
+}
+async function getAllTravelForms({ status, department }) {
+  const params = new URLSearchParams();
+  if (status && status !== "ALL") params.append("status", status);
+  if (department) params.append("department", department);
+  const queryString = params.toString();
+  const endpoint = queryString ? `/api/travel-forms?${queryString}` : "/api/travel-forms";
+  const result = await apiRequest(endpoint);
+  if (result.success) {
+    return { success: true, travelForms: result.data };
+  }
+  return result;
+}
+async function submitTravelForm({ formId }) {
+  const result = await apiRequest(`/api/travel-forms/${formId}/submit`, {
+    method: "POST"
+  });
+  if (result.success) {
+    return { success: true, travelForm: result.data };
+  }
+  return result;
+}
+async function approveTravelForm({ formId, approverId }) {
+  const result = await apiRequest(`/api/travel-forms/${formId}/approve`, {
+    method: "POST",
+    body: JSON.stringify({ approverId })
+  });
+  if (result.success) {
+    return { success: true, travelForm: result.data };
+  }
+  return result;
+}
+async function rejectTravelForm({ formId, rejecterId, reason }) {
+  const result = await apiRequest(`/api/travel-forms/${formId}/reject`, {
+    method: "POST",
+    body: JSON.stringify({ rejecterId, reason })
+  });
+  if (result.success) {
+    return { success: true, travelForm: result.data };
+  }
+  return result;
+}
+async function deleteTravelForm({ formId }) {
+  return await apiRequest(`/api/travel-forms/${formId}`, {
+    method: "DELETE"
+  });
+}
+async function getDefaultRates() {
+  const result = await apiRequest("/api/travel-forms/rates");
+  if (result.success) {
+    return { success: true, rates: result.data };
+  }
+  return { success: true, rates: DEFAULT_RATES };
+}
+async function getTravelFormStats(userId) {
+  const result = await apiRequest(`/api/travel-forms/stats/${userId}`);
+  if (result.success) {
+    return result.data;
+  }
+  return { drafts: 0, pending: 0 };
+}
+async function getAllMemos(department = null) {
+  try {
+    const endpoint = department ? `/api/memos?department=${encodeURIComponent(department)}` : "/api/memos";
+    const result = await apiRequest(endpoint);
+    if (!result.success) {
+      console.error("Failed to fetch memos:", result.error);
+      return [];
+    }
+    return extractArray(result, "data", "memos");
+  } catch (error) {
+    console.error("Get all memos error:", error);
+    return [];
+  }
+}
+async function getMemoById(memoId) {
+  try {
+    const result = await apiRequest(`/api/memos/${memoId}`);
+    if (!result.success) {
+      return { success: false, error: result.error };
+    }
+    return { success: true, memo: result.data || result.memo };
+  } catch (error) {
+    console.error("Get memo error:", error);
+    return { success: false, error: error.message };
+  }
+}
+async function createMemo({ title, content, priority, department, isPinned, authorId }) {
+  try {
+    const result = await apiRequest("/api/memos", {
+      method: "POST",
+      body: JSON.stringify({
+        title,
+        content,
+        priority: priority || "low",
+        department: department || null,
+        isPinned: isPinned || false,
+        authorId,
+        isPublished: true
+      })
+    });
+    if (!result.success) {
+      return { success: false, error: result.error || "Failed to create memo" };
+    }
+    return { success: true, memo: result.data || result.memo };
+  } catch (error) {
+    console.error("Create memo error:", error);
+    return { success: false, error: error.message };
+  }
+}
+async function updateMemo(memoId, updates) {
+  try {
+    const result = await apiRequest(`/api/memos/${memoId}`, {
+      method: "PUT",
+      body: JSON.stringify(updates)
+    });
+    if (!result.success) {
+      return { success: false, error: result.error || "Failed to update memo" };
+    }
+    return { success: true, memo: result.data || result.memo };
+  } catch (error) {
+    console.error("Update memo error:", error);
+    return { success: false, error: error.message };
+  }
+}
+async function deleteMemo(memoId) {
+  try {
+    const result = await apiRequest(`/api/memos/${memoId}`, {
+      method: "DELETE"
+    });
+    if (!result.success) {
+      return { success: false, error: result.error || "Failed to delete memo" };
+    }
+    return { success: true };
+  } catch (error) {
+    console.error("Delete memo error:", error);
+    return { success: false, error: error.message };
+  }
+}
+async function markMemoAsRead(memoId, userId) {
+  try {
+    const result = await apiRequest(`/api/memos/${memoId}/read`, {
+      method: "POST",
+      body: JSON.stringify({ userId })
+    });
+    if (!result.success) {
+      return { success: false, error: result.error || "Failed to mark memo as read" };
+    }
+    return { success: true };
+  } catch (error) {
+    console.error("Mark memo as read error:", error);
+    return { success: false, error: error.message };
+  }
+}
+const __filename$1 = fileURLToPath(import.meta.url);
+const __dirname$1 = path.dirname(__filename$1);
+config({ path: path.resolve(__dirname$1, "../../.env") });
 function createWindow() {
   const mainWindow = new BrowserWindow({
     width: 1200,
@@ -1280,7 +1339,7 @@ function createWindow() {
     minWidth: 900,
     minHeight: 600,
     webPreferences: {
-      preload: path.join(__dirname, "../preload/index.mjs"),
+      preload: path.join(__dirname$1, "../preload/index.mjs"),
       sandbox: false,
       contextIsolation: true,
       nodeIntegration: false
@@ -1291,7 +1350,7 @@ function createWindow() {
   if (process.env.NODE_ENV === "development") {
     mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL);
   } else {
-    mainWindow.loadFile(path.join(__dirname, "../renderer/index.html"));
+    mainWindow.loadFile(path.join(__dirname$1, "../renderer/index.html"));
   }
 }
 ipcMain.handle("auth:login", async (event, { email, password }) => {
@@ -1336,8 +1395,8 @@ ipcMain.handle("contacts:getAllEmails", async (event, { limit }) => {
 ipcMain.handle("contacts:testConnection", async () => {
   return await testConnection();
 });
-ipcMain.handle("bulletin:create", async (event, data) => {
-  return await createBulletin(data);
+ipcMain.handle("bulletin:create", async (event, data2) => {
+  return await createBulletin(data2);
 });
 ipcMain.handle("bulletin:delete", async (event, sourceId) => {
   return await deleteBulletin(sourceId);
@@ -1345,11 +1404,11 @@ ipcMain.handle("bulletin:delete", async (event, sourceId) => {
 ipcMain.handle("bulletin:getHistory", async (event, { userId, limit }) => {
   return await getBulletinHistory(userId, limit);
 });
-ipcMain.handle("forms:create", async (event, data) => {
-  return await createForm(data);
+ipcMain.handle("forms:create", async (event, data2) => {
+  return await createForm(data2);
 });
-ipcMain.handle("forms:update", async (event, data) => {
-  return await updateForm(data);
+ipcMain.handle("forms:update", async (event, data2) => {
+  return await updateForm(data2);
 });
 ipcMain.handle("forms:delete", async (event, { formId }) => {
   return await deleteForm(formId);
@@ -1360,8 +1419,8 @@ ipcMain.handle("forms:get", async (event, { formId }) => {
 ipcMain.handle("forms:getAll", async (event, { userId }) => {
   return await getAllForms(userId);
 });
-ipcMain.handle("forms:submit", async (event, data) => {
-  return await submitForm(data);
+ipcMain.handle("forms:submit", async (event, data2) => {
+  return await submitForm(data2);
 });
 ipcMain.handle("forms:getSubmissions", async (event, { formId }) => {
   return await getFormSubmissions(formId);
@@ -1372,19 +1431,110 @@ ipcMain.handle("forms:deleteSubmission", async (event, { submissionId }) => {
 ipcMain.handle("forms:syncSubmissions", async (event, { formId }) => {
   return await syncSubmissions(formId);
 });
+ipcMain.handle("timesheets:getCurrent", async (event, { userId }) => {
+  return await getOrCreateCurrentTimesheet({ userId });
+});
+ipcMain.handle("timesheets:getById", async (event, { timesheetId }) => {
+  return await getTimesheetById({ timesheetId });
+});
+ipcMain.handle("timesheets:getUserTimesheets", async (event, { userId, status }) => {
+  return await getUserTimesheets({ userId, status });
+});
+ipcMain.handle("timesheets:getAll", async (event, { status, department }) => {
+  return await getAllTimesheets({ status, department });
+});
+ipcMain.handle("timesheets:saveEntry", async (event, data2) => {
+  return await saveTimeEntry(data2);
+});
+ipcMain.handle("timesheets:deleteEntry", async (event, { entryId }) => {
+  return await deleteTimeEntry({});
+});
+ipcMain.handle("timesheets:submit", async (event, { timesheetId }) => {
+  return await submitTimesheet({ timesheetId });
+});
+ipcMain.handle("timesheets:approve", async (event, { timesheetId, approverId }) => {
+  return await approveTimesheet({ timesheetId, approverId });
+});
+ipcMain.handle("timesheets:reject", async (event, { timesheetId, rejecterId, reason }) => {
+  return await rejectTimesheet({ timesheetId, rejecterId, reason });
+});
+ipcMain.handle("timesheets:revertToDraft", async (event, { timesheetId }) => {
+  return await revertToDraft({ timesheetId });
+});
+ipcMain.handle("timesheets:delete", async (event, { timesheetId }) => {
+  return await deleteTimesheet({ timesheetId });
+});
+ipcMain.handle("timesheets:getPayPeriodInfo", async (event, { date }) => {
+  return await getPayPeriodInfo();
+});
+ipcMain.handle("timesheets:getStats", async (event, { userId }) => {
+  return await getTimesheetStats(userId);
+});
+ipcMain.handle("memos:getAll", async (event, { department }) => {
+  return await getAllMemos(department);
+});
+ipcMain.handle("memos:getById", async (event, { memoId }) => {
+  return await getMemoById(memoId);
+});
+ipcMain.handle("memos:create", async (event, data2) => {
+  return await createMemo(data2);
+});
+ipcMain.handle("memos:update", async (event, { memoId, updates }) => {
+  return await updateMemo(memoId, updates);
+});
+ipcMain.handle("memos:delete", async (event, { memoId }) => {
+  return await deleteMemo(memoId);
+});
+ipcMain.handle("memos:markAsRead", async (event, { memoId, userId }) => {
+  return await markMemoAsRead(memoId, userId);
+});
+ipcMain.handle("travelForms:create", async (event, data2) => {
+  return await createTravelForm(data2);
+});
+ipcMain.handle("travelForms:update", async (event, data2) => {
+  return await updateTravelForm(data2);
+});
+ipcMain.handle("travelForms:getById", async (event, { formId }) => {
+  return await getTravelFormById({ formId });
+});
+ipcMain.handle("travelForms:getUserForms", async (event, { userId, status }) => {
+  return await getUserTravelForms({ userId, status });
+});
+ipcMain.handle("travelForms:getAll", async (event, { status, department }) => {
+  return await getAllTravelForms({ status, department });
+});
+ipcMain.handle("travelForms:submit", async (event, { formId }) => {
+  return await submitTravelForm({ formId });
+});
+ipcMain.handle("travelForms:approve", async (event, { formId, approverId }) => {
+  return await approveTravelForm({ formId, approverId });
+});
+ipcMain.handle("travelForms:reject", async (event, { formId, rejecterId, reason }) => {
+  return await rejectTravelForm({ formId, rejecterId, reason });
+});
+ipcMain.handle("travelForms:delete", async (event, { formId }) => {
+  return await deleteTravelForm({ formId });
+});
+ipcMain.handle("travelForms:getDefaultRates", async () => {
+  return await getDefaultRates();
+});
+ipcMain.handle("travelForms:getStats", async (event, userId) => {
+  return await getTravelFormStats(userId);
+});
 app.whenReady().then(() => {
-  getPrisma();
   createWindow();
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
 });
 app.on("window-all-closed", async () => {
-  await disconnectPrisma();
   if (process.platform !== "darwin") {
     app.quit();
   }
 });
 app.on("before-quit", async () => {
-  await disconnectPrisma();
+  try {
+    await logout();
+  } catch (e) {
+  }
 });

@@ -21,6 +21,16 @@ const DEFAULT_FIELD = {
   options: []
 }
 
+const CATEGORY_OPTIONS = [
+  { value: 'BAND_OFFICE', label: 'Band Office' },
+  { value: 'J_W_HEALTH_CENTER', label: 'J.W. Health Center' },
+  { value: 'CSCMEC', label: 'CSCMEC' },
+  { value: 'COUNCIL', label: 'Council' },
+  { value: 'RECREATION', label: 'Recreation' },
+  { value: 'UTILITIES', label: 'Utilities' },
+  { value: 'TRSC', label: 'Land_Use_Programs' }
+]
+
 function FormBuilder({ form, user, onSave, onCancel }) {
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
@@ -32,14 +42,16 @@ function FormBuilder({ form, user, onSave, onCancel }) {
   const [fields, setFields] = useState([{ ...DEFAULT_FIELD }])
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState('')
+  const [portalWarning, setPortalWarning] = useState('')
 
-  // Category is the user's department
-  const category = user?.department || 'BAND_OFFICE'
+  // Category is selectable; default to the user's department
+  const [category, setCategory] = useState(user?.department || 'BAND_OFFICE')
 
   useEffect(() => {
     if (form) {
       setTitle(form.title || '')
       setDescription(form.description || '')
+      setCategory(form.category || user?.department || 'BAND_OFFICE')
       setDeadline(form.deadline ? new Date(form.deadline).toISOString().split('T')[0] : '')
       setMaxEntries(form.maxEntries || '')
       setIsActive(form.isActive !== false)
@@ -136,6 +148,13 @@ function FormBuilder({ form, user, onSave, onCancel }) {
       }
 
       if (result.success) {
+        // If portal sync failed, surface the error to the user before navigating away
+        if (result.portalSynced === false) {
+          const msg = result.portalError || 'Failed to sync form to portal'
+          setPortalWarning(msg)
+          // show immediate alert so it's visible even when navigating back
+          alert(`Form saved locally but portal sync failed:\n${msg}`)
+        }
         onSave()
       } else {
         setError(result.message || 'Failed to save form')
@@ -169,6 +188,18 @@ function FormBuilder({ form, user, onSave, onCancel }) {
             onChange={(e) => setTitle(e.target.value)}
             placeholder="e.g., Community BBQ Sign-up"
           />
+        </div>
+
+        <div className="form-group">
+          <label>Category</label>
+          <select value={category} onChange={(e) => setCategory(e.target.value)}>
+            {CATEGORY_OPTIONS.map(opt => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
+          <small style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.75rem', marginTop: '4px', display: 'block' }}>
+            Choose a category for this form (defaults to your department)
+          </small>
         </div>
 
         <div className="form-group">

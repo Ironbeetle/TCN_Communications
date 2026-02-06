@@ -4,10 +4,18 @@ import { getPrisma } from './database.js'
 // API Reference: See REFERENCE/Signup_Forms/SIGNUP_FORMS_API.md
 
 const getPortalConfig = () => {
-  // Forms use TCN_PORTAL_URL (base URL without /api/sync path)
-  // e.g., https://tcnaux.ca -> endpoint: /api/signup-forms
-  const baseUrl = process.env.TCN_PORTAL_URL || process.env.PORTAL_API_URL?.replace('/api/sync', '')
-  const apiKey = process.env.TCN_PORTAL_API_KEY || process.env.PORTAL_API_KEY
+  // Prefer the canonical PORTAL_API_URL, fallback to TCN_PORTAL_URL
+  // Normalize out any trailing `/api/sync` so endpoints are built consistently
+  const rawUrl = process.env.PORTAL_API_URL || process.env.TCN_PORTAL_URL
+  const baseUrl = rawUrl ? rawUrl.replace(/\/api\/sync\/?$/i, '') : rawUrl
+  const apiKey = process.env.PORTAL_API_KEY || process.env.TCN_PORTAL_API_KEY
+  
+  // Debug logging for portal config
+  console.log('=== Portal Config ===')
+  console.log('Raw URL:', rawUrl)
+  console.log('Base URL (after normalization):', baseUrl)
+  console.log('API Key set:', apiKey ? 'Yes' : 'No')
+  
   return { baseUrl, apiKey }
 }
 
@@ -21,14 +29,45 @@ async function syncFormToPortal(form) {
   }
 
   try {
-    // POST to create, PATCH to update (per API docs)
+    // POST to create, PUT to update (per API docs at ELECTRON_MIGRATION_REFERENCE.md)
     const endpoint = form.portalFormId 
       ? `${baseUrl}/api/signup-forms/${form.portalFormId}`
       : `${baseUrl}/api/signup-forms`
     
-    const method = form.portalFormId ? 'PATCH' : 'POST'
+    const method = form.portalFormId ? 'PUT' : 'POST'
 
     console.log(`Syncing form to portal: ${method} ${endpoint}`)
+
+    const payload = {
+      formId: form.id,
+      title: form.title,
+      description: form.description,
+      deadline: form.deadline ? form.deadline.toISOString() : null,
+      maxEntries: form.maxEntries,
+      isActive: form.isActive,
+      category: form.category || 'BAND_OFFICE',
+      allowResubmit: form.allowResubmit || false,
+      resubmitMessage: form.resubmitMessage || null,
+      createdBy: form.createdBy,
+      fields: form.fields.map(f => ({
+        fieldId: f.fieldId,
+        label: f.label,
+        fieldType: f.fieldType,
+        options: f.options ? (typeof f.options === 'string' ? JSON.parse(f.options) : f.options) : null,
+        placeholder: f.placeholder,
+        required: f.required,
+        order: f.order
+      }))
+    }
+
+    // Omit `category` when sending to portal to avoid enum mismatches on the portal side
+    // Portal enforces its own FormCategory enum and remote values may differ from local app
+    if (payload.category) {
+      console.log('Removing category from payload before sending to portal to avoid enum validation')
+      delete payload.category
+    }
+
+    console.log('Syncing form to portal: payload:', JSON.stringify(payload, null, 2))
 
     const response = await fetch(endpoint, {
       method,
@@ -37,39 +76,29 @@ async function syncFormToPortal(form) {
         'x-api-key': apiKey,
         'x-source': 'tcn-comm'
       },
-      body: JSON.stringify({
-        formId: form.id,
-        title: form.title,
-        description: form.description,
-        deadline: form.deadline,
-        maxEntries: form.maxEntries,
-        isActive: form.isActive,
-        category: form.category || 'BAND_OFFICE',
-        allowResubmit: form.allowResubmit || false,
-        resubmitMessage: form.resubmitMessage || null,
-        createdBy: form.createdBy,
-        fields: form.fields.map(f => ({
-          fieldId: f.fieldId,
-          label: f.label,
-          fieldType: f.fieldType,
-          options: f.options ? (typeof f.options === 'string' ? JSON.parse(f.options) : f.options) : null,
-          placeholder: f.placeholder,
-          required: f.required,
-          order: f.order
-        }))
-      })
+      body: JSON.stringify(payload)
     })
 
+    // Read response text for full logging and robust parsing
+    const respText = await response.text()
+    console.log('Portal sync response status:', response.status)
+    console.log('Portal sync response text:', respText)
+
     if (!response.ok) {
-      const errorText = await response.text()
-      throw new Error(`Portal sync failed: ${response.status} - ${errorText}`)
+      throw new Error(`Portal sync failed: ${response.status} - ${respText}`)
     }
 
-    const result = await response.json()
+    let result
+    try {
+      result = JSON.parse(respText)
+    } catch (e) {
+      result = { data: null, raw: respText }
+    }
+
     return { 
       success: true, 
       portalFormId: result.data?.id || result.portalFormId,
-      data: result.data 
+      data: result.data || result
     }
   } catch (error) {
     console.error('Portal sync error:', error)
