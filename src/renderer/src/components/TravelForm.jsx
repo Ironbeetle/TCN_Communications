@@ -185,6 +185,12 @@ function TravelForm({ user, onBack, editForm = null }) {
   }
 
   const handleSaveDraft = async () => {
+    // Validate minimum required fields for saving
+    if (!formData.departureDate || !formData.returnDate) {
+      setError('Please enter departure and return dates to save the form')
+      return
+    }
+    
     setSaving(true)
     setError(null)
     setSuccessMessage(null)
@@ -228,6 +234,8 @@ function TravelForm({ user, onBack, editForm = null }) {
     try {
       // First save/create the form
       let result
+      console.log('Submitting form data:', formData)
+      
       if (editForm?.id) {
         result = await window.electronAPI.travelForms.update({
           formId: editForm.id,
@@ -237,6 +245,8 @@ function TravelForm({ user, onBack, editForm = null }) {
         result = await window.electronAPI.travelForms.create(formData)
       }
       
+      console.log('Create/update result:', result)
+      
       if (!result.success) {
         setError(result.error || 'Failed to save travel form')
         return
@@ -244,7 +254,15 @@ function TravelForm({ user, onBack, editForm = null }) {
       
       // Then submit it
       const formId = result.travelForm?.id || editForm?.id
+      console.log('Form ID for submit:', formId)
+      
+      if (!formId) {
+        setError('Failed to get form ID for submission')
+        return
+      }
+      
       const submitResult = await window.electronAPI.travelForms.submit(formId)
+      console.log('Submit result:', submitResult)
       
       if (submitResult.success) {
         setSuccessMessage('Travel form submitted for approval!')

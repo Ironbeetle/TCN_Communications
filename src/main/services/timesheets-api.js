@@ -123,7 +123,15 @@ export async function getAllTimesheets({ status, department }) {
   
   const queryString = params.toString()
   const endpoint = queryString ? `/api/timesheets?${queryString}` : '/api/timesheets'
-  return await apiRequest(endpoint)
+  const result = await apiRequest(endpoint)
+  
+  if (result.success) {
+    // Handle VPS response format: { success: true, data: { timesheets: [...] } }
+    const timesheets = result.data?.timesheets || result.data || []
+    return { success: true, data: Array.isArray(timesheets) ? timesheets : [] }
+  }
+  
+  return result
 }
 
 /**
@@ -334,6 +342,14 @@ export async function getTimesheetStats(userId) {
     return result.data
   }
   
-  // Return defaults on error
-  return { pending: 0, currentPeriod: null }
+  // Calculate local current period as fallback
+  const { start, end } = getPayPeriodDates(new Date())
+  const periodStart = new Date(start).toLocaleDateString()
+  const periodEnd = new Date(end).toLocaleDateString()
+  
+  // Return defaults with local period calculation
+  return { 
+    pending: 0, 
+    currentPeriod: `${periodStart} - ${periodEnd}` 
+  }
 }

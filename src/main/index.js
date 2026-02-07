@@ -243,6 +243,10 @@ ipcMain.handle('forms:syncSubmissions', async (event, { formId }) => {
   return await syncSubmissions(formId)
 })
 
+ipcMain.handle('forms:getStats', async (event, { userId }) => {
+  return await getFormStats(userId)
+})
+
 // IPC Handlers - Timesheets
 ipcMain.handle('timesheets:getCurrent', async (event, { userId }) => {
   return await getOrCreateCurrentTimesheet({ userId })

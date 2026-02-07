@@ -114,14 +114,49 @@ export async function uploadPoster({ sourceId, filename, data, mimeType }) {
 
 /**
  * Create bulletin on VPS
+ * Supports poster image OR text content
  */
-export async function createBulletin({ title, subject, category, posterFile, userId }) {
-  if (!posterFile || !posterFile.data) {
-    return { success: false, message: 'Poster image is required' }
+export async function createBulletin({ title, subject, category, posterFile, content, userId }) {
+  const hasPoster = posterFile && posterFile.data
+  const hasText = content && content.trim()
+
+  if (!hasPoster && !hasText) {
+    return { success: false, message: 'Either a poster image or text content is required' }
   }
 
   try {
-    // Step 1: Create bulletin record on VPS to get ID
+    // For text-only bulletins - simple create
+    if (hasText && !hasPoster) {
+      const createResult = await apiRequest('/api/comm/bulletin', {
+        method: 'POST',
+        body: JSON.stringify({
+          title,
+          subject,
+          category: category || 'ANNOUNCEMENTS',
+          userId,
+          content: content.trim()
+        })
+      })
+
+      if (!createResult.success) {
+        return { success: false, message: createResult.error || 'Failed to create bulletin' }
+      }
+
+      return {
+        success: true,
+        message: 'Bulletin posted successfully',
+        bulletin: {
+          id: createResult.data.id,
+          title,
+          subject,
+          content: content.trim(),
+          category,
+          synced: true
+        }
+      }
+    }
+
+    // For poster bulletins - create, upload, update
     const createResult = await apiRequest('/api/comm/bulletin', {
       method: 'POST',
       body: JSON.stringify({
@@ -137,9 +172,16 @@ export async function createBulletin({ title, subject, category, posterFile, use
       return { success: false, message: createResult.error || 'Failed to create bulletin' }
     }
 
-    const bulletinId = createResult.data.id
+    console.log('Create bulletin result:', JSON.stringify(createResult, null, 2))
+    
+    const bulletinId = createResult.data?.id || createResult.id
+    console.log('Bulletin ID for upload:', bulletinId)
 
-    // Step 2: Upload poster
+    if (!bulletinId) {
+      return { success: false, message: 'Bulletin created but no ID returned - check VPS response format' }
+    }
+
+    // Upload poster
     const uploadResult = await uploadPoster({
       sourceId: bulletinId,
       filename: posterFile.filename,
@@ -147,17 +189,23 @@ export async function createBulletin({ title, subject, category, posterFile, use
       mimeType: posterFile.mimeType
     })
 
+    console.log('Upload result:', JSON.stringify(uploadResult, null, 2))
+
     if (!uploadResult.success) {
       // Clean up bulletin on failure
       await apiRequest(`/api/comm/bulletin/${bulletinId}`, { method: 'DELETE' })
       return { success: false, message: `Failed to upload poster: ${uploadResult.message}` }
     }
 
-    // Step 3: Update bulletin with poster URL
+    // Update bulletin with poster URL
+    console.log('Updating bulletin', bulletinId, 'with poster_url:', uploadResult.poster_url)
+    
     const updateResult = await apiRequest(`/api/comm/bulletin/${bulletinId}`, {
       method: 'PUT',
       body: JSON.stringify({ poster_url: uploadResult.poster_url })
     })
+
+    console.log('Update result:', JSON.stringify(updateResult, null, 2))
 
     if (!updateResult.success) {
       return {

@@ -215,16 +215,6 @@
   font-weight: 600;
 }
 
-.member-t-number {
-  font-size: 0.7rem;
-  color: #00d9ff;
-  background: rgba(0, 217, 255, 0.2);
-  padding: 0.125rem 0.5rem;
-  border-radius: 4px;
-  font-family: monospace;
-  font-weight: 600;
-}
-
 .member-contact {
   font-size: 0.8rem;
   color: #b0b0d0;

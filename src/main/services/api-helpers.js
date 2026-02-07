@@ -38,6 +38,9 @@ export async function apiRequest(endpoint, options = {}) {
   const url = `${baseUrl}${endpoint}`
   const method = fetchOptions.method || 'GET'
   
+  // Debug: Show full URL being called
+  console.log(`[API] ${method} ${url}`)
+  
   let lastError = null
   
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
@@ -69,21 +72,35 @@ export async function apiRequest(endpoint, options = {}) {
       
       const text = await response.text()
       
+      // Log response status (suppress body for 404s or HTML responses)
+      const isHtmlResponse = text.trim().startsWith('<!DOCTYPE') || text.trim().startsWith('<html')
+      
       if (process.env.NODE_ENV !== 'production') {
         console.log('API Response status:', response.status)
+        if (!isHtmlResponse && response.status !== 404) {
+          console.log('API Response body:', text.substring(0, 500))
+        }
       }
       
       if (!response.ok) {
         // Don't retry client errors (4xx), only server errors (5xx)
         if (response.status >= 400 && response.status < 500) {
+          // Handle 404 specifically - endpoint may not exist yet
+          if (response.status === 404) {
+            return { success: false, error: 'Endpoint not available', statusCode: 404 }
+          }
+          
           let errorMessage = `API error: ${response.status}`
           try {
             const errorData = JSON.parse(text)
             errorMessage = errorData.error || errorData.message || errorMessage
           } catch {
-            if (text) errorMessage = text.substring(0, 200)
+            // Don't show HTML in error messages
+            if (text && !isHtmlResponse) {
+              errorMessage = text.substring(0, 200)
+            }
           }
-          return { success: false, error: errorMessage }
+          return { success: false, error: errorMessage, statusCode: response.status }
         }
         
         // Server error - will retry

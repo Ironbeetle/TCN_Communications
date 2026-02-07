@@ -244,7 +244,7 @@ function TimesheetForm({ user, onBack }) {
 
   const formatDate = (dateStr) => {
     const date = new Date(dateStr)
-    return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+    return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' })
   }
 
   const isViewOnly = timesheet?.status === 'SUBMITTED' || timesheet?.status === 'APPROVED'
@@ -273,7 +273,7 @@ function TimesheetForm({ user, onBack }) {
             <p>
               {user.first_name} {user.last_name} • 
               {payPeriodStart && payPeriodEnd && (
-                <span> {payPeriodStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - {payPeriodEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                <span> {payPeriodStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })} - {payPeriodEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })}</span>
               )}
             </p>
           </div>
@@ -316,14 +316,14 @@ function TimesheetForm({ user, onBack }) {
         <div className={`status-banner status-${timesheet.status.toLowerCase()}`}>
           <strong>Status: {timesheet.status}</strong>
           {timesheet.status === 'SUBMITTED' && timesheet.submittedAt && (
-            <span> • Submitted on {new Date(timesheet.submittedAt).toLocaleDateString()}</span>
+            <span> • Submitted on {new Date(timesheet.submittedAt).toLocaleDateString('en-CA', { timeZone: 'UTC' })}</span>
           )}
           {timesheet.status === 'APPROVED' && timesheet.approvedAt && (
-            <span> • Approved on {new Date(timesheet.approvedAt).toLocaleDateString()}</span>
+            <span> • Approved on {new Date(timesheet.approvedAt).toLocaleDateString('en-CA', { timeZone: 'UTC' })}</span>
           )}
           {timesheet.status === 'REJECTED' && (
             <>
-              {timesheet.rejectedAt && <span> • Rejected on {new Date(timesheet.rejectedAt).toLocaleDateString()}</span>}
+              {timesheet.rejectedAt && <span> • Rejected on {new Date(timesheet.rejectedAt).toLocaleDateString('en-CA', { timeZone: 'UTC' })}</span>}
               {timesheet.rejectionReason && <span className="rejection-reason"> • Reason: {timesheet.rejectionReason}</span>}
             </>
           )}

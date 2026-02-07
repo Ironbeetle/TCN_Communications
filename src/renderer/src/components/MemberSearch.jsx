@@ -170,7 +170,7 @@ function MemberSearch({ type, selected, onSelect }) {
           onChange={(e) => setSearchTerm(e.target.value)}
           onFocus={() => searchResults.length > 0 && setShowResults(true)}
           onKeyDown={handleKeyDown}
-          placeholder={`Search members by name or T-number...`}
+          placeholder={`Search members by name, community, or address...`}
           className="search-input"
         />
         {isSearching && <span className="search-spinner"></span>}
@@ -285,19 +285,6 @@ function MemberSearch({ type, selected, onSelect }) {
                   <div className="member-info" style={{ flex: 1, minWidth: 0 }}>
                     <div className="member-name-row" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <span style={{ color: '#ffffff', fontWeight: 600, fontSize: '15px' }}>{member.name}</span>
-                      {member.t_number && (
-                        <span style={{ 
-                          color: '#00d9ff', 
-                          background: 'rgba(0,217,255,0.2)', 
-                          padding: '2px 8px', 
-                          borderRadius: '4px',
-                          fontSize: '11px',
-                          fontFamily: 'monospace',
-                          fontWeight: 600
-                        }}>
-                          {member.t_number}
-                        </span>
-                      )}
                     </div>
                     <span style={{ color: '#b0b0d0', fontSize: '13px' }}>
                       {type === 'phone' ? member.phone : member.email}
@@ -339,7 +326,7 @@ function MemberSearch({ type, selected, onSelect }) {
         <div className="search-no-results">
           <span className="no-results-icon">🔍</span>
           <span className="no-results-text">No members found for "{searchTerm}"</span>
-          <span className="no-results-hint">Try a different name or T-number</span>
+          <span className="no-results-hint">Try a different name, community, or address</span>
         </div>
       )}
 

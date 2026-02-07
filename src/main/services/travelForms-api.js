@@ -104,10 +104,31 @@ export async function createTravelForm(data) {
     ...data
   }
   
-  return await apiRequest('/api/travel-forms', {
+  // Ensure dates are properly formatted ISO strings
+  console.log('Raw dates:', formData.departureDate, formData.returnDate)
+  
+  if (formData.departureDate && typeof formData.departureDate === 'string') {
+    formData.departureDate = new Date(formData.departureDate).toISOString()
+  }
+  if (formData.returnDate && typeof formData.returnDate === 'string') {
+    formData.returnDate = new Date(formData.returnDate).toISOString()
+  }
+  
+  console.log('Converted dates:', formData.departureDate, formData.returnDate)
+  console.log('Creating travel form - sending to API...')
+  
+  const result = await apiRequest('/api/travel-forms', {
     method: 'POST',
     body: JSON.stringify(formData)
   })
+  
+  console.log('Create travel form API result:', result)
+  
+  if (result.success) {
+    return { success: true, travelForm: result.data }
+  }
+  
+  return result
 }
 
 /**
@@ -116,10 +137,24 @@ export async function createTravelForm(data) {
 export async function updateTravelForm(data) {
   const { formId, ...updateData } = data
   
-  return await apiRequest(`/api/travel-forms/${formId}`, {
+  // Ensure dates are properly formatted ISO strings
+  if (updateData.departureDate && typeof updateData.departureDate === 'string') {
+    updateData.departureDate = new Date(updateData.departureDate).toISOString()
+  }
+  if (updateData.returnDate && typeof updateData.returnDate === 'string') {
+    updateData.returnDate = new Date(updateData.returnDate).toISOString()
+  }
+  
+  const result = await apiRequest(`/api/travel-forms/${formId}`, {
     method: 'PUT',
     body: JSON.stringify(updateData)
   })
+  
+  if (result.success) {
+    return { success: true, travelForm: result.data }
+  }
+  
+  return result
 }
 
 /**
@@ -166,7 +201,9 @@ export async function getAllTravelForms({ status, department }) {
   const result = await apiRequest(endpoint)
   
   if (result.success) {
-    return { success: true, travelForms: result.data }
+    // Handle VPS response format: { success: true, data: { forms: [...] } }
+    const forms = result.data?.forms || result.data?.travelForms || result.data || []
+    return { success: true, data: Array.isArray(forms) ? forms : [], travelForms: Array.isArray(forms) ? forms : [] }
   }
   
   return result
@@ -176,9 +213,13 @@ export async function getAllTravelForms({ status, department }) {
  * Submit travel form for approval
  */
 export async function submitTravelForm({ formId }) {
+  console.log('Submitting travel form:', formId)
+  
   const result = await apiRequest(`/api/travel-forms/${formId}/submit`, {
     method: 'POST'
   })
+  
+  console.log('Submit travel form API result:', result)
   
   if (result.success) {
     return { success: true, travelForm: result.data }

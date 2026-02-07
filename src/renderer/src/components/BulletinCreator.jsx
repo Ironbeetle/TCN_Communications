@@ -15,8 +15,10 @@ function BulletinCreator({ user }) {
   const [title, setTitle] = useState('')
   const [subject, setSubject] = useState('')
   const [category, setCategory] = useState('ANNOUNCEMENTS')
+  const [contentType, setContentType] = useState('poster') // 'poster' or 'text'
   const [posterFile, setPosterFile] = useState(null)
   const [posterPreview, setPosterPreview] = useState(null)
+  const [textContent, setTextContent] = useState('')
   const [isPosting, setIsPosting] = useState(false)
   const [result, setResult] = useState(null)
   const fileInputRef = useRef(null)
@@ -56,14 +58,31 @@ function BulletinCreator({ user }) {
     }
   }
 
+  const handleContentTypeChange = (type) => {
+    setContentType(type)
+    setResult(null)
+    if (type === 'text') {
+      setPosterFile(null)
+      setPosterPreview(null)
+      if (fileInputRef.current) fileInputRef.current.value = ''
+    } else {
+      setTextContent('')
+    }
+  }
+
   const handlePost = async () => {
     if (!title.trim() || !subject.trim()) {
       setResult({ success: false, message: 'Please fill in title and subject' })
       return
     }
 
-    if (!posterFile) {
+    if (contentType === 'poster' && !posterFile) {
       setResult({ success: false, message: 'Please upload a poster image' })
+      return
+    }
+
+    if (contentType === 'text' && !textContent.trim()) {
+      setResult({ success: false, message: 'Please enter text content' })
       return
     }
 
@@ -71,26 +90,34 @@ function BulletinCreator({ user }) {
     setResult(null)
 
     try {
-      // Convert file to base64 for IPC transfer
-      const reader = new FileReader()
-      const base64Data = await new Promise((resolve, reject) => {
-        reader.onloadend = () => resolve(reader.result)
-        reader.onerror = reject
-        reader.readAsDataURL(posterFile)
-      })
-
-      // Create bulletin - the service handles upload + sync internally
-      const response = await window.electronAPI.bulletin.create({
+      const bulletinData = {
         title,
         subject,
         category,
-        posterFile: {
+        userId: user.id
+      }
+
+      // Add poster file if selected
+      if (contentType === 'poster' && posterFile) {
+        const reader = new FileReader()
+        const base64Data = await new Promise((resolve, reject) => {
+          reader.onloadend = () => resolve(reader.result)
+          reader.onerror = reject
+          reader.readAsDataURL(posterFile)
+        })
+        bulletinData.posterFile = {
           filename: posterFile.name,
           data: base64Data,
           mimeType: posterFile.type
-        },
-        userId: user.id
-      })
+        }
+      }
+
+      // Add text content if selected
+      if (contentType === 'text' && textContent.trim()) {
+        bulletinData.content = textContent.trim()
+      }
+
+      const response = await window.electronAPI.bulletin.create(bulletinData)
       
       setResult(response)
       
@@ -98,8 +125,10 @@ function BulletinCreator({ user }) {
         setTitle('')
         setSubject('')
         setCategory('ANNOUNCEMENTS')
+        setContentType('poster')
         setPosterFile(null)
         setPosterPreview(null)
+        setTextContent('')
         if (fileInputRef.current) {
           fileInputRef.current.value = ''
         }
@@ -114,41 +143,63 @@ function BulletinCreator({ user }) {
   return (
     <div className="composer">
       <div className="composer-header">
-        <h2>Create Bulletin Poster</h2>
-        <p>Upload a poster to publish on the community portal</p>
+        <h2>Create Bulletin</h2>
+        <p>Post a bulletin to the community portal</p>
       </div>
 
       <div className="composer-body">
-        {/* Poster Upload Section - Primary Focus */}
-        <div className="composer-section poster-upload-section">
-          <label>Poster Image <span className="required">*</span></label>
-          <p className="field-hint">Upload the poster you've created (PNG, JPG - max 10MB)</p>
-          
-          <input
-            type="file"
-            ref={fileInputRef}
-            accept="image/*"
-            onChange={handleFileSelect}
-            style={{ display: 'none' }}
-            id="poster-upload"
-          />
-          
-          {!posterPreview ? (
-            <div 
-              className="poster-dropzone"
-              onClick={() => fileInputRef.current?.click()}
+        {/* Content Type Toggle */}
+        <div className="composer-section">
+          <label>Bulletin Type</label>
+          <div className="content-type-toggle">
+            <button 
+              type="button"
+              className={`toggle-btn ${contentType === 'poster' ? 'active' : ''}`}
+              onClick={() => handleContentTypeChange('poster')}
             >
-              <div className="dropzone-content">
-                <svg className="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                  <polyline points="17,8 12,3 7,8" />
-                  <line x1="12" y1="3" x2="12" y2="15" />
-                </svg>
-                <span>Click to select poster image</span>
-                <span className="dropzone-hint">or drag and drop</span>
+              Poster Image
+            </button>
+            <button 
+              type="button"
+              className={`toggle-btn ${contentType === 'text' ? 'active' : ''}`}
+              onClick={() => handleContentTypeChange('text')}
+            >
+              Text Content
+            </button>
+          </div>
+        </div>
+
+        {/* Poster Upload Section */}
+        {contentType === 'poster' && (
+          <div className="composer-section poster-upload-section">
+            <label>Poster Image <span className="required">*</span></label>
+            <p className="field-hint">Upload the poster you've created (PNG, JPG - max 10MB)</p>
+            
+            <input
+              type="file"
+              ref={fileInputRef}
+              accept="image/*"
+              onChange={handleFileSelect}
+              style={{ display: 'none' }}
+              id="poster-upload"
+            />
+            
+            {!posterPreview ? (
+              <div 
+                className="poster-dropzone"
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <div className="dropzone-content">
+                  <svg className="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                    <polyline points="17,8 12,3 7,8" />
+                    <line x1="12" y1="3" x2="12" y2="15" />
+                  </svg>
+                  <span>Click to select poster image</span>
+                  <span className="dropzone-hint">or drag and drop</span>
+                </div>
               </div>
-            </div>
-          ) : (
+            ) : (
             <div className="poster-preview-container">
               <img src={posterPreview} alt="Poster preview" className="poster-preview-image" />
               <div className="poster-preview-overlay">
@@ -170,7 +221,24 @@ function BulletinCreator({ user }) {
               <p className="poster-filename">{posterFile?.name}</p>
             </div>
           )}
-        </div>
+          </div>
+        )}
+
+        {/* Text Content Section */}
+        {contentType === 'text' && (
+          <div className="composer-section">
+            <label htmlFor="textContent">Bulletin Text <span className="required">*</span></label>
+            <p className="field-hint">Enter the text content for your bulletin</p>
+            <textarea
+              id="textContent"
+              value={textContent}
+              onChange={(e) => setTextContent(e.target.value)}
+              placeholder="Enter bulletin content here..."
+              rows={8}
+              className="composer-textarea"
+            />
+          </div>
+        )}
 
         <div className="composer-row">
           <div className="composer-section" style={{ flex: 2 }}>
@@ -222,7 +290,7 @@ function BulletinCreator({ user }) {
           <button 
             className="send-button"
             onClick={handlePost}
-            disabled={isPosting || !title.trim() || !subject.trim() || !posterFile}
+            disabled={isPosting || !title.trim() || !subject.trim() || (contentType === 'poster' ? !posterFile : !textContent.trim())}
           >
             {isPosting ? 'Publishing...' : 'Publish Bulletin'}
           </button>

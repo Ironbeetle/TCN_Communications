@@ -470,7 +470,7 @@ await resend.emails.send({
 **Request Params:**
 ```typescript
 {
-  query: string,      // Search term (name or T-number)
+  query: string,      // Search term (name, community, or address)
   limit: number,      // Max results (default 50)
   offset: number,     // Pagination offset
   activated: 'true',  // Only active members
@@ -495,13 +495,13 @@ await resend.emails.send({
 
 interface PortalContact {
   memberId: string,
-  t_number: string,
   name: string,
   firstName: string,
   lastName: string,
   phone?: string,
   email?: string,
   community?: string,
+  address?: string,
   status?: string,
   activated?: string,
   birthdate?: string
@@ -513,15 +513,12 @@ interface PortalContact {
 interface Member {
   id: string,
   memberId?: string,
-  t_number: string,
   name?: string,
   personal_info: {
     first_name: string,
     last_name: string,
-    t_number: string,
     date_of_birth?: string
   },
-  contact_number?: string,
   phone?: string,
   email?: string,
   contact_info?: {
@@ -529,6 +526,7 @@ interface Member {
     phone?: string
   },
   community?: string,
+  address?: string,
   status?: string,
   activated?: string,
   birthdate?: string

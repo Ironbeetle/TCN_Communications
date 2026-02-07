@@ -166,13 +166,28 @@ export async function createUser(userData) {
  */
 export async function getAllUsers() {
   try {
+    console.log('[Auth API] Getting all users from VPS...')
     const result = await apiRequest('/api/comm/users')
+    console.log('[Auth API] Raw result:', JSON.stringify(result).substring(0, 500))
     
     if (!result.success) {
+      console.error('[Auth API] Failed:', result.error)
       return { success: false, error: result.error || 'Failed to fetch users' }
     }
     
-    return { success: true, users: result.data }
+    // Handle VPS response format: { success: true, data: { users: [...] } }
+    // or possibly: { success: true, users: [...] } or { success: true, data: [...] }
+    let users = []
+    if (result.data && Array.isArray(result.data.users)) {
+      users = result.data.users
+    } else if (Array.isArray(result.users)) {
+      users = result.users
+    } else if (Array.isArray(result.data)) {
+      users = result.data
+    }
+    
+    console.log('[Auth API] Parsed users count:', users.length)
+    return { success: true, users }
   } catch (error) {
     console.error('Get users error:', error)
     return { success: false, error: 'Failed to fetch users' }

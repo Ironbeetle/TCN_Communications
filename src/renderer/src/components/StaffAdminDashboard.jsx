@@ -5,7 +5,7 @@ import UserEditor from './UserEditor'
 import './Dashboard.css'
 import './StaffAdminDashboard.css'
 
-function StaffAdminDashboard({ user, onLogout }) {
+function StaffAdminDashboard({ user, onLogout, isFullAdmin = false }) {
   const [activeView, setActiveView] = useState('home')
   const [stats, setStats] = useState(null)
   const [departmentStaff, setDepartmentStaff] = useState([])
@@ -42,16 +42,37 @@ function StaffAdminDashboard({ user, onLogout }) {
 
   const loadDashboardData = async () => {
     try {
-      // Load pending timesheets for department (use getAll with department filter)
-      const timesheetsResult = await window.electronAPI.timesheets?.getAll(null, user.department)
+      // For full admin, don't filter by department - see all
+      const deptFilter = isFullAdmin ? null : user.department
+      
+      // Load all users to get staff list and count
+      console.log('[Dashboard] Loading users...')
+      const usersResult = await window.electronAPI.auth.getAllUsers()
+      console.log('[Dashboard] Users result:', usersResult)
+      let staffList = []
+      if (usersResult?.success) {
+        const allUsers = Array.isArray(usersResult.users) ? usersResult.users : []
+        console.log('[Dashboard] All users count:', allUsers.length)
+        // Filter by department for staff admin, show all for full admin
+        staffList = isFullAdmin 
+          ? allUsers 
+          : allUsers.filter(u => u.department === user.department)
+        console.log('[Dashboard] Filtered staff count:', staffList.length)
+        setDepartmentStaff(staffList)
+      } else {
+        console.error('[Dashboard] Failed to load users:', usersResult?.error)
+      }
+
+      // Load pending timesheets (all for admin, department for staff_admin)
+      const timesheetsResult = await window.electronAPI.timesheets?.getAll(null, deptFilter)
       if (timesheetsResult?.success) {
         const timesheetsData = Array.isArray(timesheetsResult.data) ? timesheetsResult.data : []
         setTimesheets(timesheetsData)
         setPendingTimesheets(timesheetsData.filter(t => t.status === 'SUBMITTED'))
       }
 
-      // Load pending travel forms for department (use getAll with department filter)
-      const travelResult = await window.electronAPI.travelForms?.getAll(null, user.department)
+      // Load pending travel forms (all for admin, department for staff_admin)
+      const travelResult = await window.electronAPI.travelForms?.getAll(null, deptFilter)
       if (travelResult?.success) {
         const travelData = Array.isArray(travelResult.data) ? travelResult.data : 
                            Array.isArray(travelResult.travelForms) ? travelResult.travelForms : []
@@ -67,13 +88,35 @@ function StaffAdminDashboard({ user, onLogout }) {
                         Array.isArray(memosResult?.memos) ? memosResult.memos : []
       setMemos(memosData)
 
+      // Load sign-up form stats for admin view
+      let formStats = { totalForms: 0, totalSubmissions: 0, activeForms: 0 }
+      if (isFullAdmin) {
+        try {
+          const formsStatsResult = await window.electronAPI.forms.getStats()
+          if (formsStatsResult) {
+            formStats = formsStatsResult
+          }
+        } catch (e) {
+          console.error('Failed to fetch form stats:', e)
+        }
+      }
+
       // Calculate stats
       const timesheetsData = Array.isArray(timesheetsResult?.data) ? timesheetsResult.data : []
       const travelData = Array.isArray(travelResult?.data) ? travelResult.data : 
                          Array.isArray(travelResult?.travelForms) ? travelResult.travelForms : []
       
       setStats({
-        totalStaff: 0, // Staff list not implemented yet
+        totalStaff: staffList.length,
+        pendingTimesheets: timesheetsData.filter(t => t.status === 'SUBMITTED').length,
+        pendingTravelForms: travelData.filter(t => t.status === 'SUBMITTED').length,
+        activeMemos: memosData.filter(m => m.isPublished).length,
+        totalForms: formStats.totalForms || 0,
+        totalSubmissions: formStats.totalSubmissions || 0,
+        activeForms: formStats.activeForms || 0
+      })
+      console.log('[Dashboard] Final stats:', {
+        totalStaff: staffList.length,
         pendingTimesheets: timesheetsData.filter(t => t.status === 'SUBMITTED').length,
         pendingTravelForms: travelData.filter(t => t.status === 'SUBMITTED').length,
         activeMemos: memosData.filter(m => m.isPublished).length
@@ -208,7 +251,8 @@ function StaffAdminDashboard({ user, onLogout }) {
     return new Date(dateStr).toLocaleDateString('en-CA', {
       year: 'numeric',
       month: 'short',
-      day: 'numeric'
+      day: 'numeric',
+      timeZone: 'UTC'
     })
   }
 
@@ -246,7 +290,7 @@ function StaffAdminDashboard({ user, onLogout }) {
     <div className="dashboard staff-admin-dashboard">
       <header className="dashboard-header staff-admin-header">
         <div className="header-brand">
-          <h1>TCN Staff Admin</h1>
+          <h1>{isFullAdmin ? 'TCN Admin' : 'TCN Staff Admin'}</h1>
           <nav className="header-nav">
             <button 
               className={`nav-button ${activeView === 'home' ? 'active' : ''}`}
@@ -301,8 +345,8 @@ function StaffAdminDashboard({ user, onLogout }) {
         <div className="header-user">
           <span className="user-info">
             <span className="user-name">{user.name}</span>
-            <span className="user-role staff-admin-badge">
-              Staff Admin • {user.department.replace(/_/g, ' ')}
+            <span className={`user-role ${isFullAdmin ? 'admin-badge' : 'staff-admin-badge'}`}>
+              {isFullAdmin ? 'Administrator' : `Staff Admin • ${user.department?.replace(/_/g, ' ') || 'N/A'}`}
             </span>
           </span>
           <button onClick={handleLogout} className="logout-button">
@@ -316,8 +360,12 @@ function StaffAdminDashboard({ user, onLogout }) {
         {activeView === 'home' && (
           <>
             <div className="welcome-section">
-              <h2>Staff Admin Dashboard</h2>
-              <p>Manage {user.department.replace(/_/g, ' ')} department staff and approvals</p>
+              <h2>{isFullAdmin ? 'Admin Dashboard' : 'Staff Admin Dashboard'}</h2>
+              <p>
+                {isFullAdmin 
+                  ? 'Manage all departments and staff approvals' 
+                  : `Manage ${user.department?.replace(/_/g, ' ') || 'department'} staff and approvals`}
+              </p>
             </div>
 
             {/* Stats Cards */}
@@ -326,7 +374,7 @@ function StaffAdminDashboard({ user, onLogout }) {
                 <div className="stat-icon">👥</div>
                 <div className="stat-content">
                   <span className="stat-value">{stats?.totalStaff || 0}</span>
-                  <span className="stat-label">Department Staff</span>
+                  <span className="stat-label">{isFullAdmin ? 'Total Staff' : 'Department Staff'}</span>
                 </div>
               </div>
 
@@ -353,16 +401,37 @@ function StaffAdminDashboard({ user, onLogout }) {
                   <span className="stat-label">Active Memos</span>
                 </div>
               </div>
+
+              {/* Sign-up Form Stats - Admin only */}
+              {isFullAdmin && (
+                <>
+                  <div className="stat-card" onClick={() => setActiveView('forms')}>
+                    <div className="stat-icon">📝</div>
+                    <div className="stat-content">
+                      <span className="stat-value">{stats?.activeForms || 0}</span>
+                      <span className="stat-label">Active Forms</span>
+                    </div>
+                  </div>
+
+                  <div className="stat-card" onClick={() => setActiveView('forms')}>
+                    <div className="stat-icon">📋</div>
+                    <div className="stat-content">
+                      <span className="stat-value">{stats?.totalSubmissions || 0}</span>
+                      <span className="stat-label">Form Submissions</span>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
 
             {/* Department Staff Overview */}
             <div className="admin-section">
               <div className="section-header">
-                <h3>👥 Department Staff</h3>
+                <h3>👥 {isFullAdmin ? 'All Staff' : 'Department Staff'}</h3>
               </div>
               <div className="staff-overview">
                 {departmentStaff.length === 0 ? (
-                  <p className="empty-message">No staff members in this department</p>
+                  <p className="empty-message">{isFullAdmin ? 'No staff members found' : 'No staff members in this department'}</p>
                 ) : (
                   <div className="staff-grid">
                     {departmentStaff.map(staff => (
@@ -580,13 +649,13 @@ function StaffAdminDashboard({ user, onLogout }) {
                     <div className="item-header">
                       <div className="item-user">
                         <div className="user-avatar">
-                          {form.submitter?.first_name?.[0]}{form.submitter?.last_name?.[0]}
+                          {(form.user?.first_name || form.submitter?.first_name)?.[0]}{(form.user?.last_name || form.submitter?.last_name)?.[0]}
                         </div>
                         <div className="user-details">
                           <span className="user-name">
-                            {form.submitter?.first_name} {form.submitter?.last_name}
+                            {form.user?.first_name || form.submitter?.first_name || form.name?.split(' ')[0]} {form.user?.last_name || form.submitter?.last_name || form.name?.split(' ').slice(1).join(' ')}
                           </span>
-                          <span className="user-email">{form.submitter?.email}</span>
+                          <span className="user-email">{form.user?.email || form.submitter?.email}</span>
                         </div>
                       </div>
                       <span className={`status-badge ${getStatusBadgeClass(form.status)}`}>

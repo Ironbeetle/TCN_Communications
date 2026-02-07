@@ -42,7 +42,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
     submit: (data) => ipcRenderer.invoke("forms:submit", data),
     getSubmissions: (formId) => ipcRenderer.invoke("forms:getSubmissions", { formId }),
     deleteSubmission: (submissionId) => ipcRenderer.invoke("forms:deleteSubmission", { submissionId }),
-    syncSubmissions: (formId) => ipcRenderer.invoke("forms:syncSubmissions", { formId })
+    syncSubmissions: (formId) => ipcRenderer.invoke("forms:syncSubmissions", { formId }),
+    getStats: (userId) => ipcRenderer.invoke("forms:getStats", { userId })
   },
   // Timesheets
   timesheets: {

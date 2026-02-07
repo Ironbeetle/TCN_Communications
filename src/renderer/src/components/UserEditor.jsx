@@ -134,7 +134,8 @@ function UserEditor({ currentUser }) {
     return new Date(dateString).toLocaleDateString('en-CA', {
       year: 'numeric',
       month: 'short',
-      day: 'numeric'
+      day: 'numeric',
+      timeZone: 'UTC'
     })
   }
 

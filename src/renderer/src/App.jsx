@@ -52,14 +52,14 @@ function App() {
   const isAdmin = user.role === 'ADMIN' || user.role === 'CHIEF_COUNCIL'
   const isStaffAdmin = user.role === 'STAFF_ADMIN'
   
-  // Admin gets full admin dashboard
+  // Admin gets staff admin dashboard with full access (no department filter)
   if (isAdmin) {
-    return <AdminDashboard user={user} onLogout={handleLogout} />
+    return <StaffAdminDashboard user={user} onLogout={handleLogout} isFullAdmin={true} />
   }
   
-  // Staff Admin gets the staff admin dashboard
+  // Staff Admin gets the staff admin dashboard (filtered to their department)
   if (isStaffAdmin) {
-    return <StaffAdminDashboard user={user} onLogout={handleLogout} />
+    return <StaffAdminDashboard user={user} onLogout={handleLogout} isFullAdmin={false} />
   }
   
   // Regular staff get the standard dashboard

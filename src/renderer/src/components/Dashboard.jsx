@@ -229,7 +229,7 @@ function Dashboard({ user, onLogout }) {
                         <p className="memo-preview-content">{memo.content.substring(0, 100)}...</p>
                         <div className="memo-preview-footer">
                           <span className="memo-author">From: {memo.author?.first_name} {memo.author?.last_name}</span>
-                          <span className="memo-date">{new Date(memo.createdAt).toLocaleDateString()}</span>
+                          <span className="memo-date">{new Date(memo.createdAt).toLocaleDateString('en-CA', { timeZone: 'UTC' })}</span>
                         </div>
                       </div>
                     ))}

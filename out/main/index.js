@@ -26,6 +26,7 @@ async function apiRequest(endpoint, options = {}) {
   }
   const url = `${baseUrl}${endpoint}`;
   const method = fetchOptions.method || "GET";
+  console.log(`[API] ${method} ${url}`);
   let lastError = null;
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     if (process.env.NODE_ENV !== "production") {
@@ -50,19 +51,28 @@ async function apiRequest(endpoint, options = {}) {
       });
       clearTimeout(timeoutId);
       const text = await response.text();
+      const isHtmlResponse = text.trim().startsWith("<!DOCTYPE") || text.trim().startsWith("<html");
       if (process.env.NODE_ENV !== "production") {
         console.log("API Response status:", response.status);
+        if (!isHtmlResponse && response.status !== 404) {
+          console.log("API Response body:", text.substring(0, 500));
+        }
       }
       if (!response.ok) {
         if (response.status >= 400 && response.status < 500) {
+          if (response.status === 404) {
+            return { success: false, error: "Endpoint not available", statusCode: 404 };
+          }
           let errorMessage = `API error: ${response.status}`;
           try {
             const errorData = JSON.parse(text);
             errorMessage = errorData.error || errorData.message || errorMessage;
           } catch {
-            if (text) errorMessage = text.substring(0, 200);
+            if (text && !isHtmlResponse) {
+              errorMessage = text.substring(0, 200);
+            }
           }
-          return { success: false, error: errorMessage };
+          return { success: false, error: errorMessage, statusCode: response.status };
         }
         throw new Error(`Server error: ${response.status} - ${text.substring(0, 200)}`);
       }
@@ -202,11 +212,23 @@ async function createUser(userData) {
 }
 async function getAllUsers() {
   try {
+    console.log("[Auth API] Getting all users from VPS...");
     const result = await apiRequest("/api/comm/users");
+    console.log("[Auth API] Raw result:", JSON.stringify(result).substring(0, 500));
     if (!result.success) {
+      console.error("[Auth API] Failed:", result.error);
       return { success: false, error: result.error || "Failed to fetch users" };
     }
-    return { success: true, users: result.data };
+    let users = [];
+    if (result.data && Array.isArray(result.data.users)) {
+      users = result.data.users;
+    } else if (Array.isArray(result.users)) {
+      users = result.users;
+    } else if (Array.isArray(result.data)) {
+      users = result.data;
+    }
+    console.log("[Auth API] Parsed users count:", users.length);
+    return { success: true, users };
   } catch (error) {
     console.error("Get users error:", error);
     return { success: false, error: "Failed to fetch users" };
@@ -490,24 +512,24 @@ async function searchMembers(searchTerm, limit = 50) {
       activated: "true",
       fields: "both"
     });
-    const result = await apiRequest(`/contacts?${params}`);
+    const result = await apiRequest(`/api/sync/contacts?${params}`);
     if (result.success && result.data?.contacts) {
       return {
         success: true,
         members: result.data.contacts.map((contact) => ({
           id: contact.memberId,
           memberId: contact.memberId,
-          t_number: contact.t_number,
           name: contact.name || `${contact.firstName} ${contact.lastName}`,
           firstName: contact.firstName,
           lastName: contact.lastName,
           phone: contact.phone,
           email: contact.email,
           community: contact.community,
+          address: contact.address,
           status: contact.status
         })),
-        count: data.data.count,
-        hasMore: data.data.pagination?.hasMore || false
+        count: result.data.count,
+        hasMore: result.data.pagination?.hasMore || false
       };
     }
     return { success: true, members: [], count: 0 };
@@ -523,7 +545,7 @@ async function getAllPhoneNumbers(limit = 1e3) {
       activated: "true",
       fields: "phone"
     });
-    const result = await apiRequest(`/contacts?${params}`);
+    const result = await apiRequest(`/api/sync/contacts?${params}`);
     if (result.success && result.data?.contacts) {
       return {
         success: true,
@@ -546,7 +568,7 @@ async function getAllEmails(limit = 1e3) {
       activated: "true",
       fields: "email"
     });
-    const result = await apiRequest(`/contacts?${params}`);
+    const result = await apiRequest(`/api/sync/contacts?${params}`);
     if (result.success && result.data?.contacts) {
       return {
         success: true,
@@ -564,7 +586,7 @@ async function getAllEmails(limit = 1e3) {
 }
 async function testConnection() {
   try {
-    const result = await apiRequest("/health");
+    const result = await apiRequest("/api/sync/health");
     if (result.success) {
       return { success: true, message: "Portal API connected" };
     }
@@ -604,13 +626,13 @@ Content-Type: ${file.contentType}\r
     contentType: `multipart/form-data; boundary=${boundary}`
   };
 }
-async function uploadPoster({ sourceId, filename, data: data2, mimeType }) {
+async function uploadPoster({ sourceId, filename, data, mimeType }) {
   const { baseUrl, apiKey } = getPortalConfig();
   try {
     if (!baseUrl || !apiKey) {
       const uploadsDir = join(app.getPath("userData"), "uploads", "posters");
       await mkdir(uploadsDir, { recursive: true });
-      const base64Data2 = data2.replace(/^data:image\/\w+;base64,/, "");
+      const base64Data2 = data.replace(/^data:image\/\w+;base64,/, "");
       const buffer2 = Buffer.from(base64Data2, "base64");
       const ext2 = filename.split(".").pop() || "jpg";
       const localFilename = `${sourceId}.${ext2}`;
@@ -622,7 +644,7 @@ async function uploadPoster({ sourceId, filename, data: data2, mimeType }) {
         message: "Poster saved locally (portal not configured)"
       };
     }
-    const base64Data = data2.replace(/^data:image\/\w+;base64,/, "");
+    const base64Data = data.replace(/^data:image\/\w+;base64,/, "");
     const buffer = Buffer.from(base64Data, "base64");
     const ext = filename.split(".").pop() || "jpg";
     const uploadFilename = `${sourceId}.${ext}`;
@@ -660,11 +682,40 @@ async function uploadPoster({ sourceId, filename, data: data2, mimeType }) {
     };
   }
 }
-async function createBulletin({ title, subject, category, posterFile, userId }) {
-  if (!posterFile || !posterFile.data) {
-    return { success: false, message: "Poster image is required" };
+async function createBulletin({ title, subject, category, posterFile, content, userId }) {
+  const hasPoster = posterFile && posterFile.data;
+  const hasText = content && content.trim();
+  if (!hasPoster && !hasText) {
+    return { success: false, message: "Either a poster image or text content is required" };
   }
   try {
+    if (hasText && !hasPoster) {
+      const createResult2 = await apiRequest("/api/comm/bulletin", {
+        method: "POST",
+        body: JSON.stringify({
+          title,
+          subject,
+          category: category || "ANNOUNCEMENTS",
+          userId,
+          content: content.trim()
+        })
+      });
+      if (!createResult2.success) {
+        return { success: false, message: createResult2.error || "Failed to create bulletin" };
+      }
+      return {
+        success: true,
+        message: "Bulletin posted successfully",
+        bulletin: {
+          id: createResult2.data.id,
+          title,
+          subject,
+          content: content.trim(),
+          category,
+          synced: true
+        }
+      };
+    }
     const createResult = await apiRequest("/api/comm/bulletin", {
       method: "POST",
       body: JSON.stringify({
@@ -679,21 +730,29 @@ async function createBulletin({ title, subject, category, posterFile, userId }) 
     if (!createResult.success) {
       return { success: false, message: createResult.error || "Failed to create bulletin" };
     }
-    const bulletinId = createResult.data.id;
+    console.log("Create bulletin result:", JSON.stringify(createResult, null, 2));
+    const bulletinId = createResult.data?.id || createResult.id;
+    console.log("Bulletin ID for upload:", bulletinId);
+    if (!bulletinId) {
+      return { success: false, message: "Bulletin created but no ID returned - check VPS response format" };
+    }
     const uploadResult = await uploadPoster({
       sourceId: bulletinId,
       filename: posterFile.filename,
       data: posterFile.data,
       mimeType: posterFile.mimeType
     });
+    console.log("Upload result:", JSON.stringify(uploadResult, null, 2));
     if (!uploadResult.success) {
       await apiRequest(`/api/comm/bulletin/${bulletinId}`, { method: "DELETE" });
       return { success: false, message: `Failed to upload poster: ${uploadResult.message}` };
     }
+    console.log("Updating bulletin", bulletinId, "with poster_url:", uploadResult.poster_url);
     const updateResult = await apiRequest(`/api/comm/bulletin/${bulletinId}`, {
       method: "PUT",
       body: JSON.stringify({ poster_url: uploadResult.poster_url })
     });
+    console.log("Update result:", JSON.stringify(updateResult, null, 2));
     if (!updateResult.success) {
       return {
         success: false,
@@ -917,6 +976,18 @@ async function syncSubmissions(formId) {
     return { success: false, error: error.message };
   }
 }
+async function getFormStats(userId) {
+  try {
+    const endpoint = userId ? `/api/comm/signup-forms/stats?userId=${userId}` : "/api/comm/signup-forms/stats";
+    const result = await apiRequest(endpoint);
+    if (!result.success) {
+      return { totalForms: 0, totalSubmissions: 0, activeForms: 0 };
+    }
+    return result.data;
+  } catch (error) {
+    return { totalForms: 0, totalSubmissions: 0, activeForms: 0 };
+  }
+}
 function getPayPeriodDates(date = /* @__PURE__ */ new Date()) {
   const referenceDate = /* @__PURE__ */ new Date("2025-01-06");
   const targetDate = new Date(date);
@@ -988,7 +1059,12 @@ async function getAllTimesheets({ status, department }) {
   if (department) params.append("department", department);
   const queryString = params.toString();
   const endpoint = queryString ? `/api/timesheets?${queryString}` : "/api/timesheets";
-  return await apiRequest(endpoint);
+  const result = await apiRequest(endpoint);
+  if (result.success) {
+    const timesheets = result.data?.timesheets || result.data || [];
+    return { success: true, data: Array.isArray(timesheets) ? timesheets : [] };
+  }
+  return result;
 }
 async function saveTimeEntry({ timesheetId, date, startTime, endTime, breakMinutes, totalHours }) {
   try {
@@ -1128,7 +1204,13 @@ async function getTimesheetStats(userId) {
   if (result.success) {
     return result.data;
   }
-  return { pending: 0, currentPeriod: null };
+  const { start, end } = getPayPeriodDates(/* @__PURE__ */ new Date());
+  const periodStart = new Date(start).toLocaleDateString();
+  const periodEnd = new Date(end).toLocaleDateString();
+  return {
+    pending: 0,
+    currentPeriod: `${periodStart} - ${periodEnd}`
+  };
 }
 const DEFAULT_RATES = {
   hotelRate: 200,
@@ -1144,22 +1226,46 @@ const DEFAULT_RATES = {
   thompsonFlatRate: 100,
   taxiFareRate: 17.3
 };
-async function createTravelForm(data2) {
+async function createTravelForm(data) {
   const formData = {
     ...DEFAULT_RATES,
-    ...data2
+    ...data
   };
-  return await apiRequest("/api/travel-forms", {
+  console.log("Raw dates:", formData.departureDate, formData.returnDate);
+  if (formData.departureDate && typeof formData.departureDate === "string") {
+    formData.departureDate = new Date(formData.departureDate).toISOString();
+  }
+  if (formData.returnDate && typeof formData.returnDate === "string") {
+    formData.returnDate = new Date(formData.returnDate).toISOString();
+  }
+  console.log("Converted dates:", formData.departureDate, formData.returnDate);
+  console.log("Creating travel form - sending to API...");
+  const result = await apiRequest("/api/travel-forms", {
     method: "POST",
     body: JSON.stringify(formData)
   });
+  console.log("Create travel form API result:", result);
+  if (result.success) {
+    return { success: true, travelForm: result.data };
+  }
+  return result;
 }
-async function updateTravelForm(data2) {
-  const { formId, ...updateData } = data2;
-  return await apiRequest(`/api/travel-forms/${formId}`, {
+async function updateTravelForm(data) {
+  const { formId, ...updateData } = data;
+  if (updateData.departureDate && typeof updateData.departureDate === "string") {
+    updateData.departureDate = new Date(updateData.departureDate).toISOString();
+  }
+  if (updateData.returnDate && typeof updateData.returnDate === "string") {
+    updateData.returnDate = new Date(updateData.returnDate).toISOString();
+  }
+  const result = await apiRequest(`/api/travel-forms/${formId}`, {
     method: "PUT",
     body: JSON.stringify(updateData)
   });
+  if (result.success) {
+    return { success: true, travelForm: result.data };
+  }
+  return result;
 }
 async function getTravelFormById({ formId }) {
   const result = await apiRequest(`/api/travel-forms/${formId}`);
@@ -1184,14 +1290,17 @@ async function getAllTravelForms({ status, department }) {
   const endpoint = queryString ? `/api/travel-forms?${queryString}` : "/api/travel-forms";
   const result = await apiRequest(endpoint);
   if (result.success) {
-    return { success: true, travelForms: result.data };
+    const forms = result.data?.forms || result.data?.travelForms || result.data || [];
+    return { success: true, data: Array.isArray(forms) ? forms : [], travelForms: Array.isArray(forms) ? forms : [] };
   }
   return result;
 }
 async function submitTravelForm({ formId }) {
+  console.log("Submitting travel form:", formId);
   const result = await apiRequest(`/api/travel-forms/${formId}/submit`, {
     method: "POST"
   });
+  console.log("Submit travel form API result:", result);
   if (result.success) {
     return { success: true, travelForm: result.data };
   }
@@ -1241,7 +1350,9 @@ async function getAllMemos(department = null) {
     const endpoint = department ? `/api/memos?department=${encodeURIComponent(department)}` : "/api/memos";
     const result = await apiRequest(endpoint);
     if (!result.success) {
-      console.error("Failed to fetch memos:", result.error);
+      if (result.statusCode !== 404) {
+        console.error("Failed to fetch memos:", result.error);
+      }
       return [];
     }
     return extractArray(result, "data", "memos");
@@ -1395,8 +1506,8 @@ ipcMain.handle("contacts:getAllEmails", async (event, { limit }) => {
 ipcMain.handle("contacts:testConnection", async () => {
   return await testConnection();
 });
-ipcMain.handle("bulletin:create", async (event, data2) => {
-  return await createBulletin(data2);
+ipcMain.handle("bulletin:create", async (event, data) => {
+  return await createBulletin(data);
 });
 ipcMain.handle("bulletin:delete", async (event, sourceId) => {
   return await deleteBulletin(sourceId);
@@ -1404,11 +1515,11 @@ ipcMain.handle("bulletin:delete", async (event, sourceId) => {
 ipcMain.handle("bulletin:getHistory", async (event, { userId, limit }) => {
   return await getBulletinHistory(userId, limit);
 });
-ipcMain.handle("forms:create", async (event, data2) => {
-  return await createForm(data2);
+ipcMain.handle("forms:create", async (event, data) => {
+  return await createForm(data);
 });
-ipcMain.handle("forms:update", async (event, data2) => {
-  return await updateForm(data2);
+ipcMain.handle("forms:update", async (event, data) => {
+  return await updateForm(data);
 });
 ipcMain.handle("forms:delete", async (event, { formId }) => {
   return await deleteForm(formId);
@@ -1419,8 +1530,8 @@ ipcMain.handle("forms:get", async (event, { formId }) => {
 ipcMain.handle("forms:getAll", async (event, { userId }) => {
   return await getAllForms(userId);
 });
-ipcMain.handle("forms:submit", async (event, data2) => {
-  return await submitForm(data2);
+ipcMain.handle("forms:submit", async (event, data) => {
+  return await submitForm(data);
 });
 ipcMain.handle("forms:getSubmissions", async (event, { formId }) => {
   return await getFormSubmissions(formId);
@@ -1430,6 +1541,9 @@ ipcMain.handle("forms:deleteSubmission", async (event, { submissionId }) => {
 });
 ipcMain.handle("forms:syncSubmissions", async (event, { formId }) => {
   return await syncSubmissions(formId);
+});
+ipcMain.handle("forms:getStats", async (event, { userId }) => {
+  return await getFormStats(userId);
 });
 ipcMain.handle("timesheets:getCurrent", async (event, { userId }) => {
   return await getOrCreateCurrentTimesheet({ userId });
@@ -1443,8 +1557,8 @@ ipcMain.handle("timesheets:getUserTimesheets", async (event, { userId, status })
 ipcMain.handle("timesheets:getAll", async (event, { status, department }) => {
   return await getAllTimesheets({ status, department });
 });
-ipcMain.handle("timesheets:saveEntry", async (event, data2) => {
-  return await saveTimeEntry(data2);
+ipcMain.handle("timesheets:saveEntry", async (event, data) => {
+  return await saveTimeEntry(data);
 });
 ipcMain.handle("timesheets:deleteEntry", async (event, { entryId }) => {
   return await deleteTimeEntry({});
@@ -1476,8 +1590,8 @@ ipcMain.handle("memos:getAll", async (event, { department }) => {
 ipcMain.handle("memos:getById", async (event, { memoId }) => {
   return await getMemoById(memoId);
 });
-ipcMain.handle("memos:create", async (event, data2) => {
-  return await createMemo(data2);
+ipcMain.handle("memos:create", async (event, data) => {
+  return await createMemo(data);
 });
 ipcMain.handle("memos:update", async (event, { memoId, updates }) => {
   return await updateMemo(memoId, updates);
@@ -1488,11 +1602,11 @@ ipcMain.handle("memos:delete", async (event, { memoId }) => {
 ipcMain.handle("memos:markAsRead", async (event, { memoId, userId }) => {
   return await markMemoAsRead(memoId, userId);
 });
-ipcMain.handle("travelForms:create", async (event, data2) => {
-  return await createTravelForm(data2);
+ipcMain.handle("travelForms:create", async (event, data) => {
+  return await createTravelForm(data);
 });
-ipcMain.handle("travelForms:update", async (event, data2) => {
-  return await updateTravelForm(data2);
+ipcMain.handle("travelForms:update", async (event, data) => {
+  return await updateTravelForm(data);
 });
 ipcMain.handle("travelForms:getById", async (event, { formId }) => {
   return await getTravelFormById({ formId });

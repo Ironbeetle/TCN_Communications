@@ -15,7 +15,10 @@ export async function getAllMemos(department = null) {
     const result = await apiRequest(endpoint)
 
     if (!result.success) {
-      console.error('Failed to fetch memos:', result.error)
+      // Silently handle 404 - endpoint may not exist yet
+      if (result.statusCode !== 404) {
+        console.error('Failed to fetch memos:', result.error)
+      }
       return []
     }
 

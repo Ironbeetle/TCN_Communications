@@ -11,7 +11,7 @@ export async function searchMembers(searchTerm, limit = 50) {
       fields: 'both'
     })
 
-    const result = await apiRequest(`/contacts?${params}`)
+    const result = await apiRequest(`/api/sync/contacts?${params}`)
 
     if (result.success && result.data?.contacts) {
       return {
@@ -19,17 +19,17 @@ export async function searchMembers(searchTerm, limit = 50) {
         members: result.data.contacts.map(contact => ({
           id: contact.memberId,
           memberId: contact.memberId,
-          t_number: contact.t_number,
           name: contact.name || `${contact.firstName} ${contact.lastName}`,
           firstName: contact.firstName,
           lastName: contact.lastName,
           phone: contact.phone,
           email: contact.email,
           community: contact.community,
+          address: contact.address,
           status: contact.status
         })),
-        count: data.data.count,
-        hasMore: data.data.pagination?.hasMore || false
+        count: result.data.count,
+        hasMore: result.data.pagination?.hasMore || false
       }
     }
 
@@ -48,7 +48,7 @@ export async function getAllPhoneNumbers(limit = 1000) {
       fields: 'phone'
     })
 
-    const result = await apiRequest(`/contacts?${params}`)
+    const result = await apiRequest(`/api/sync/contacts?${params}`)
 
     if (result.success && result.data?.contacts) {
       return {
@@ -77,7 +77,7 @@ export async function getAllEmails(limit = 1000) {
       fields: 'email'
     })
 
-    const result = await apiRequest(`/contacts?${params}`)
+    const result = await apiRequest(`/api/sync/contacts?${params}`)
 
     if (result.success && result.data?.contacts) {
       return {
@@ -100,7 +100,7 @@ export async function getAllEmails(limit = 1000) {
 
 export async function testConnection() {
   try {
-    const result = await apiRequest('/health')
+    const result = await apiRequest('/api/sync/health')
     if (result.success) {
       return { success: true, message: 'Portal API connected' }
     }

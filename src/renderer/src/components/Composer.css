@@ -313,3 +313,40 @@
   color: rgba(255, 255, 255, 0.5);
   word-break: break-all;
 }
+
+/* Content Type Toggle */
+.content-type-toggle {
+  display: flex;
+  gap: 0;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  padding: 4px;
+  width: fit-content;
+}
+
+.toggle-btn {
+  padding: 0.625rem 1.25rem;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+}
+
+.toggle-btn:hover {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.toggle-btn.active {
+  background: #00d9ff;
+  color: #1a1a2e;
+}
+
+/* Text Content Textarea */
+.composer-textarea {
+  min-height: 200px;
+  line-height: 1.6;
+}
