@@ -112,13 +112,19 @@ export async function deleteForm(formId) {
  */
 export async function getForm(formId) {
   try {
+    console.log('[Forms API] Getting form:', formId)
     const result = await apiRequest(`/api/comm/signup-forms/${formId}`)
+    console.log('[Forms API] Get form result:', JSON.stringify(result).substring(0, 500))
 
     if (!result.success) {
       return { success: false, message: result.error || 'Form not found' }
     }
 
-    return { success: true, form: result.data }
+    // Handle various response formats
+    const form = result.data?.form || result.data || result.form
+    console.log('[Forms API] Parsed form:', form?.id, form?.title)
+    
+    return { success: true, form }
   } catch (error) {
     console.error('Get form error:', error)
     return { success: false, message: error.message }
@@ -186,13 +192,26 @@ export async function submitForm({ formId, memberId, name, email, phone, respons
  */
 export async function getFormSubmissions(formId) {
   try {
+    console.log('[Forms API] Getting submissions for form:', formId)
     const result = await apiRequest(`/api/comm/signup-forms/${formId}/submissions`)
+    console.log('[Forms API] Submissions result:', JSON.stringify(result).substring(0, 500))
 
     if (!result.success) {
       return { success: false, message: result.error || 'Failed to fetch submissions', submissions: [] }
     }
 
-    return { success: true, submissions: result.data }
+    // Handle various response formats from VPS
+    let submissions = []
+    if (Array.isArray(result.data)) {
+      submissions = result.data
+    } else if (Array.isArray(result.data?.submissions)) {
+      submissions = result.data.submissions
+    } else if (Array.isArray(result.submissions)) {
+      submissions = result.submissions
+    }
+    
+    console.log('[Forms API] Parsed submissions count:', submissions.length)
+    return { success: true, submissions }
   } catch (error) {
     console.error('Get submissions error:', error)
     return { success: false, message: error.message, submissions: [] }

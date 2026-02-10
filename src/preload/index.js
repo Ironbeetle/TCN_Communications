@@ -40,6 +40,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getHistory: (userId, limit) => ipcRenderer.invoke('bulletin:getHistory', { userId, limit })
   },
 
+  // Image Optimization
+  image: {
+    optimizePoster: (base64Data) => ipcRenderer.invoke('image:optimizePoster', { base64Data })
+  },
+
   // Forms
   forms: {
     create: (data) => ipcRenderer.invoke('forms:create', data),

@@ -135,20 +135,30 @@ export async function verifySession() {
  */
 export async function createUser(userData) {
   try {
+    console.log('[Auth API] Creating user:', userData.email)
+    
+    // If ID is provided, this is an update operation
+    if (userData.id) {
+      console.log('[Auth API] User has ID, delegating to updateUser:', userData.id)
+      return await updateUser(userData.id, userData)
+    }
+    
     const result = await apiRequest('/api/comm/users', {
       method: 'POST',
       body: JSON.stringify({
         email: userData.email.toLowerCase(),
         password: userData.password,
-        first_name: userData.first_name,
-        last_name: userData.last_name,
+        firstName: userData.first_name,
+        lastName: userData.last_name,
         department: userData.department || 'BAND_OFFICE',
         role: userData.role || 'STAFF'
       })
     })
     
+    console.log('[Auth API] Create user result:', JSON.stringify(result).substring(0, 500))
+    
     if (!result.success) {
-      return { success: false, error: result.error || 'Failed to create user' }
+      return { success: false, message: result.error || 'Failed to create user' }
     }
     
     return { 
@@ -157,7 +167,7 @@ export async function createUser(userData) {
     }
   } catch (error) {
     console.error('Create user error:', error)
-    return { success: false, error: 'Failed to create user' }
+    return { success: false, message: error.message || 'Failed to create user' }
   }
 }
 
@@ -217,13 +227,24 @@ export async function getUserById(userId) {
  */
 export async function updateUser(userId, userData) {
   try {
+    console.log('[Auth API] Updating user:', userId)
+    
     const result = await apiRequest(`/api/comm/users/${userId}`, {
       method: 'PUT',
-      body: JSON.stringify(userData)
+      body: JSON.stringify({
+        email: userData.email?.toLowerCase(),
+        firstName: userData.first_name,
+        lastName: userData.last_name,
+        department: userData.department,
+        role: userData.role
+        // Note: password updates should use a separate endpoint
+      })
     })
     
+    console.log('[Auth API] Update user result:', JSON.stringify(result).substring(0, 500))
+    
     if (!result.success) {
-      return { success: false, error: result.error || 'Failed to update user' }
+      return { success: false, message: result.error || 'Failed to update user' }
     }
     
     // If updating current user, refresh local session
@@ -232,14 +253,14 @@ export async function updateUser(userId, userData) {
       store.set('currentUser', {
         ...currentUser,
         ...result.data,
-        name: `${result.data.first_name} ${result.data.last_name}`
+        name: `${result.data.firstName} ${result.data.lastName}`
       })
     }
     
     return { success: true, user: result.data }
   } catch (error) {
     console.error('Update user error:', error)
-    return { success: false, error: 'Failed to update user' }
+    return { success: false, message: error.message || 'Failed to update user' }
   }
 }
 

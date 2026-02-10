@@ -4,6 +4,7 @@ import { fileURLToPath } from "url";
 import { config } from "dotenv";
 import Store from "electron-store";
 import { mkdir, writeFile } from "fs/promises";
+import sharp from "sharp";
 import __cjs_mod__ from "node:module";
 const __filename = import.meta.filename;
 const __dirname = import.meta.dirname;
@@ -187,19 +188,25 @@ function isAuthenticated() {
 }
 async function createUser(userData) {
   try {
+    console.log("[Auth API] Creating user:", userData.email);
+    if (userData.id) {
+      console.log("[Auth API] User has ID, delegating to updateUser:", userData.id);
+      return await updateUser(userData.id, userData);
+    }
     const result = await apiRequest("/api/comm/users", {
       method: "POST",
       body: JSON.stringify({
         email: userData.email.toLowerCase(),
         password: userData.password,
-        first_name: userData.first_name,
-        last_name: userData.last_name,
+        firstName: userData.first_name,
+        lastName: userData.last_name,
         department: userData.department || "BAND_OFFICE",
         role: userData.role || "STAFF"
       })
     });
+    console.log("[Auth API] Create user result:", JSON.stringify(result).substring(0, 500));
     if (!result.success) {
-      return { success: false, error: result.error || "Failed to create user" };
+      return { success: false, message: result.error || "Failed to create user" };
     }
     return {
       success: true,
@@ -207,7 +214,7 @@ async function createUser(userData) {
     };
   } catch (error) {
     console.error("Create user error:", error);
-    return { success: false, error: "Failed to create user" };
+    return { success: false, message: error.message || "Failed to create user" };
   }
 }
 async function getAllUsers() {
@@ -232,6 +239,38 @@ async function getAllUsers() {
   } catch (error) {
     console.error("Get users error:", error);
     return { success: false, error: "Failed to fetch users" };
+  }
+}
+async function updateUser(userId, userData) {
+  try {
+    console.log("[Auth API] Updating user:", userId);
+    const result = await apiRequest(`/api/comm/users/${userId}`, {
+      method: "PUT",
+      body: JSON.stringify({
+        email: userData.email?.toLowerCase(),
+        firstName: userData.first_name,
+        lastName: userData.last_name,
+        department: userData.department,
+        role: userData.role
+        // Note: password updates should use a separate endpoint
+      })
+    });
+    console.log("[Auth API] Update user result:", JSON.stringify(result).substring(0, 500));
+    if (!result.success) {
+      return { success: false, message: result.error || "Failed to update user" };
+    }
+    const currentUser = store.get("currentUser");
+    if (currentUser?.id === userId) {
+      store.set("currentUser", {
+        ...currentUser,
+        ...result.data,
+        name: `${result.data.firstName} ${result.data.lastName}`
+      });
+    }
+    return { success: true, user: result.data };
+  } catch (error) {
+    console.error("Update user error:", error);
+    return { success: false, message: error.message || "Failed to update user" };
   }
 }
 let twilioClient = null;
@@ -890,11 +929,15 @@ async function deleteForm(formId) {
 }
 async function getForm(formId) {
   try {
+    console.log("[Forms API] Getting form:", formId);
     const result = await apiRequest(`/api/comm/signup-forms/${formId}`);
+    console.log("[Forms API] Get form result:", JSON.stringify(result).substring(0, 500));
     if (!result.success) {
       return { success: false, message: result.error || "Form not found" };
     }
-    return { success: true, form: result.data };
+    const form = result.data?.form || result.data || result.form;
+    console.log("[Forms API] Parsed form:", form?.id, form?.title);
+    return { success: true, form };
   } catch (error) {
     console.error("Get form error:", error);
     return { success: false, message: error.message };
@@ -938,11 +981,22 @@ async function submitForm({ formId, memberId, name, email, phone, responses }) {
 }
 async function getFormSubmissions(formId) {
   try {
+    console.log("[Forms API] Getting submissions for form:", formId);
     const result = await apiRequest(`/api/comm/signup-forms/${formId}/submissions`);
+    console.log("[Forms API] Submissions result:", JSON.stringify(result).substring(0, 500));
     if (!result.success) {
       return { success: false, message: result.error || "Failed to fetch submissions", submissions: [] };
     }
-    return { success: true, submissions: result.data };
+    let submissions = [];
+    if (Array.isArray(result.data)) {
+      submissions = result.data;
+    } else if (Array.isArray(result.data?.submissions)) {
+      submissions = result.data.submissions;
+    } else if (Array.isArray(result.submissions)) {
+      submissions = result.submissions;
+    }
+    console.log("[Forms API] Parsed submissions count:", submissions.length);
+    return { success: true, submissions };
   } catch (error) {
     console.error("Get submissions error:", error);
     return { success: false, message: error.message, submissions: [] };
@@ -1440,6 +1494,106 @@ async function markMemoAsRead(memoId, userId) {
     return { success: false, error: error.message };
   }
 }
+const TARGET_WIDTH = 612;
+const TARGET_HEIGHT = 792;
+const ASPECT_RATIO = 8.5 / 11;
+const ASPECT_RATIO_TOLERANCE = 0.05;
+const JPEG_QUALITY = 85;
+async function validateAspectRatio(imageBuffer) {
+  try {
+    const metadata = await sharp(imageBuffer).metadata();
+    const { width, height } = metadata;
+    if (!width || !height) {
+      return { valid: false, error: "Unable to read image dimensions" };
+    }
+    const imageRatio = width / height;
+    const expectedRatio = ASPECT_RATIO;
+    const ratioDiff = Math.abs(imageRatio - expectedRatio) / expectedRatio;
+    if (ratioDiff > ASPECT_RATIO_TOLERANCE) {
+      const expectedHeight = Math.round(width / ASPECT_RATIO);
+      return {
+        valid: false,
+        width,
+        height,
+        ratio: imageRatio,
+        error: `Image has wrong aspect ratio. Expected 8.5" × 11" (portrait). Your image is ${width}×${height}px. For this width, height should be approximately ${expectedHeight}px.`
+      };
+    }
+    return {
+      valid: true,
+      width,
+      height,
+      ratio: imageRatio
+    };
+  } catch (error) {
+    return {
+      valid: false,
+      error: `Failed to read image: ${error.message}`
+    };
+  }
+}
+async function optimizePosterImage(imageBuffer) {
+  try {
+    const validation = await validateAspectRatio(imageBuffer);
+    if (!validation.valid) {
+      return {
+        success: false,
+        error: validation.error
+      };
+    }
+    const originalSize = imageBuffer.length;
+    const optimizedBuffer = await sharp(imageBuffer).resize(TARGET_WIDTH, TARGET_HEIGHT, {
+      fit: "fill",
+      // Stretch to exact dimensions (aspect ratio already validated)
+      withoutEnlargement: false
+      // Allow upscaling small images
+    }).jpeg({
+      quality: JPEG_QUALITY,
+      mozjpeg: true
+      // Use mozjpeg for better compression
+    }).toBuffer();
+    const base64Data = `data:image/jpeg;base64,${optimizedBuffer.toString("base64")}`;
+    return {
+      success: true,
+      data: base64Data,
+      originalSize,
+      optimizedSize: optimizedBuffer.length,
+      dimensions: { width: TARGET_WIDTH, height: TARGET_HEIGHT }
+    };
+  } catch (error) {
+    console.error("Image optimization failed:", error);
+    return {
+      success: false,
+      error: `Image optimization failed: ${error.message}`
+    };
+  }
+}
+async function validateAndOptimizePoster(base64Data) {
+  try {
+    const base64Clean = base64Data.replace(/^data:image\/\w+;base64,/, "");
+    const buffer = Buffer.from(base64Clean, "base64");
+    const result = await optimizePosterImage(buffer);
+    if (result.success) {
+      const savings = Math.round((1 - result.optimizedSize / result.originalSize) * 100);
+      return {
+        success: true,
+        data: result.data,
+        stats: {
+          originalSize: result.originalSize,
+          optimizedSize: result.optimizedSize,
+          savings: savings > 0 ? `${savings}% smaller` : "No size reduction",
+          dimensions: result.dimensions
+        }
+      };
+    }
+    return result;
+  } catch (error) {
+    return {
+      success: false,
+      error: `Image processing failed: ${error.message}`
+    };
+  }
+}
 const __filename$1 = fileURLToPath(import.meta.url);
 const __dirname$1 = path.dirname(__filename$1);
 config({ path: path.resolve(__dirname$1, "../../.env") });
@@ -1514,6 +1668,9 @@ ipcMain.handle("bulletin:delete", async (event, sourceId) => {
 });
 ipcMain.handle("bulletin:getHistory", async (event, { userId, limit }) => {
   return await getBulletinHistory(userId, limit);
+});
+ipcMain.handle("image:optimizePoster", async (event, { base64Data }) => {
+  return await validateAndOptimizePoster(base64Data);
 });
 ipcMain.handle("forms:create", async (event, data) => {
   return await createForm(data);

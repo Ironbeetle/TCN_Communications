@@ -109,6 +109,11 @@ import {
   markMemoAsRead
 } from './services/memos-api.js'
 
+// Image utilities - poster optimization
+import {
+  validateAndOptimizePoster
+} from './services/image-utils.js'
+
 function createWindow() {
   const mainWindow = new BrowserWindow({
     width: 1200,
@@ -204,6 +209,11 @@ ipcMain.handle('bulletin:delete', async (event, sourceId) => {
 
 ipcMain.handle('bulletin:getHistory', async (event, { userId, limit }) => {
   return await getBulletinHistory(userId, limit)
+})
+
+// IPC Handlers - Image Optimization
+ipcMain.handle('image:optimizePoster', async (event, { base64Data }) => {
+  return await validateAndOptimizePoster(base64Data)
 })
 
 // IPC Handlers - Forms

@@ -322,12 +322,14 @@ function StaffAdminDashboard({ user, onLogout, isFullAdmin = false }) {
             >
               Office Memos
             </button>
-            <button 
-              className={`nav-button ${activeView === 'staff' ? 'active' : ''}`}
-              onClick={() => setActiveView('staff')}
-            >
-              Staff
-            </button>
+            {isFullAdmin && (
+              <button 
+                className={`nav-button ${activeView === 'staff' ? 'active' : ''}`}
+                onClick={() => setActiveView('staff')}
+              >
+                Staff Manager
+              </button>
+            )}
             <button 
               className={`nav-button ${activeView === 'communications' ? 'active' : ''}`}
               onClick={() => setActiveView('communications')}
@@ -370,13 +372,15 @@ function StaffAdminDashboard({ user, onLogout, isFullAdmin = false }) {
 
             {/* Stats Cards */}
             <div className="stats-grid">
-              <div className="stat-card" onClick={() => setActiveView('staff')}>
-                <div className="stat-icon">👥</div>
-                <div className="stat-content">
-                  <span className="stat-value">{stats?.totalStaff || 0}</span>
-                  <span className="stat-label">{isFullAdmin ? 'Total Staff' : 'Department Staff'}</span>
+              {isFullAdmin && (
+                <div className="stat-card" onClick={() => setActiveView('staff')}>
+                  <div className="stat-icon">👥</div>
+                  <div className="stat-content">
+                    <span className="stat-value">{stats?.totalStaff || 0}</span>
+                    <span className="stat-label">Total Staff</span>
+                  </div>
                 </div>
-              </div>
+              )}
 
               <div className="stat-card urgent" onClick={() => setActiveView('timesheets')}>
                 <div className="stat-icon">⏰</div>
@@ -831,8 +835,8 @@ function StaffAdminDashboard({ user, onLogout, isFullAdmin = false }) {
           <Forms user={user} />
         )}
 
-        {/* STAFF VIEW */}
-        {activeView === 'staff' && (
+        {/* STAFF VIEW - Admin only */}
+        {activeView === 'staff' && isFullAdmin && (
           <UserEditor currentUser={user} />
         )}
       </main>

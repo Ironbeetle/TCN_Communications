@@ -16,18 +16,36 @@ function SubmissionsViewer({ form, onBack }) {
     setIsLoading(true)
     try {
       // Get full form details with fields
+      console.log('[SubmissionsViewer] Loading form:', form.id)
       const formResult = await window.electronAPI.forms.get(form.id)
-      if (formResult.success) {
-        setFormDetails(formResult.form)
+      console.log('[SubmissionsViewer] Form result:', formResult)
+      if (formResult.success && formResult.form) {
+        // Ensure fields array exists
+        const formData = {
+          ...formResult.form,
+          fields: formResult.form.fields || []
+        }
+        setFormDetails(formData)
+      } else {
+        console.error('[SubmissionsViewer] Failed to load form:', formResult)
+        // Use passed form as fallback
+        setFormDetails({ ...form, fields: form.fields || [] })
       }
 
-      // Get submissions (local only on initial load)
+      // Get submissions
+      console.log('[SubmissionsViewer] Loading submissions for form:', form.id)
       const result = await window.electronAPI.forms.getSubmissions(form.id)
+      console.log('[SubmissionsViewer] Submissions result:', result)
       if (result.success) {
-        setSubmissions(result.submissions)
+        setSubmissions(result.submissions || [])
+      } else {
+        console.error('[SubmissionsViewer] Failed to load submissions:', result)
+        setSubmissions([])
       }
     } catch (error) {
       console.error('Failed to load submissions:', error)
+      setFormDetails({ ...form, fields: form.fields || [] })
+      setSubmissions([])
     } finally {
       setIsLoading(false)
     }
@@ -86,17 +104,22 @@ function SubmissionsViewer({ form, onBack }) {
   }
 
   const exportToCSV = () => {
-    if (!formDetails || submissions.length === 0) return
+    if (!formDetails || !formDetails.fields || submissions.length === 0) return
 
     const headers = ['Name', 'Email', 'Phone', 'Submitted At', ...formDetails.fields.map(f => f.label)]
     const rows = submissions.map(sub => {
-      const responses = typeof sub.responses === 'string' ? JSON.parse(sub.responses) : sub.responses
+      const responses = typeof sub.responses === 'string' ? JSON.parse(sub.responses) : (sub.responses || {})
+      const name = sub.name || 
+                   (sub.fnmember?.first_name && `${sub.fnmember.first_name} ${sub.fnmember.last_name}`) ||
+                   responses.name || responses.full_name || ''
+      const email = sub.email || sub.fnmember?.email || responses.email || ''
+      const phone = sub.phone || sub.fnmember?.phone || responses.phone || ''
       return [
-        sub.name,
-        sub.email || '',
-        sub.phone || '',
-        new Date(sub.submittedAt).toLocaleString(),
-        ...formDetails.fields.map(f => responses[f.id] || responses[f.label] || '')
+        name,
+        email,
+        phone,
+        new Date(sub.submittedAt || sub.created).toLocaleString(),
+        ...formDetails.fields.map(f => responses[f.id] || responses[f.fieldId] || responses[f.label] || '')
       ]
     })
 
@@ -115,21 +138,26 @@ function SubmissionsViewer({ form, onBack }) {
   }
 
   const formatDate = (dateString) => {
-    return new Date(dateString).toLocaleDateString('en-CA', {
+    if (!dateString) return '-'
+    const date = new Date(dateString)
+    if (isNaN(date.getTime())) return '-'
+    return date.toLocaleDateString('en-CA', {
       year: 'numeric',
       month: 'short',
       day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
       timeZone: 'UTC'
     })
   }
 
   const getResponseValue = (submission, field) => {
-    const responses = typeof submission.responses === 'string' 
-      ? JSON.parse(submission.responses) 
-      : submission.responses
-    return responses[field.id] || responses[field.label] || '-'
+    try {
+      const responses = typeof submission.responses === 'string' 
+        ? JSON.parse(submission.responses) 
+        : (submission.responses || {})
+      return responses[field.id] || responses[field.fieldId] || responses[field.label] || '-'
+    } catch (e) {
+      return '-'
+    }
   }
 
   if (isLoading) {
@@ -203,33 +231,46 @@ function SubmissionsViewer({ form, onBack }) {
                 <th>Name</th>
                 <th>Email</th>
                 <th>Phone</th>
-                {formDetails?.fields.slice(0, 3).map(field => (
-                  <th key={field.id}>{field.label}</th>
+                {formDetails?.fields?.slice(0, 3).map(field => (
+                  <th key={field.id || field.fieldId}>{field.label}</th>
                 ))}
                 <th>Submitted</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody>
-              {submissions.map(submission => (
-                <tr key={submission.id}>
-                  <td>{submission.name}</td>
-                  <td>{submission.email || '-'}</td>
-                  <td>{submission.phone || '-'}</td>
-                  {formDetails?.fields.slice(0, 3).map(field => (
-                    <td key={field.id}>{getResponseValue(submission, field)}</td>
-                  ))}
-                  <td>{formatDate(submission.submittedAt)}</td>
-                  <td>
-                    <button 
-                      className="form-action-button danger"
-                      onClick={() => handleDelete(submission.id)}
-                    >
-                      Delete
-                    </button>
-                  </td>
-                </tr>
-              ))}
+              {submissions.map(submission => {
+                // Handle different data formats from VPS
+                const responses = typeof submission.responses === 'string' 
+                  ? JSON.parse(submission.responses) 
+                  : (submission.responses || {})
+                // Name/email/phone may be direct fields, or in responses, or from fnmember relation
+                const name = submission.name || 
+                             submission.fnmember?.first_name && `${submission.fnmember.first_name} ${submission.fnmember.last_name}` ||
+                             responses.name || responses.full_name || '-'
+                const email = submission.email || submission.fnmember?.email || responses.email || '-'
+                const phone = submission.phone || submission.fnmember?.phone || responses.phone || '-'
+                
+                return (
+                  <tr key={submission.id}>
+                    <td>{name}</td>
+                    <td>{email}</td>
+                    <td>{phone}</td>
+                    {formDetails?.fields?.slice(0, 3).map(field => (
+                      <td key={field.id || field.fieldId}>{getResponseValue(submission, field)}</td>
+                    ))}
+                    <td>{formatDate(submission.submittedAt || submission.created)}</td>
+                    <td>
+                      <button 
+                        className="form-action-button danger"
+                        onClick={() => handleDelete(submission.id)}
+                      >
+                        Delete
+                      </button>
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>

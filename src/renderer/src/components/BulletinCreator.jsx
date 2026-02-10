@@ -18,12 +18,15 @@ function BulletinCreator({ user }) {
   const [contentType, setContentType] = useState('poster') // 'poster' or 'text'
   const [posterFile, setPosterFile] = useState(null)
   const [posterPreview, setPosterPreview] = useState(null)
+  const [optimizedPoster, setOptimizedPoster] = useState(null)
   const [textContent, setTextContent] = useState('')
   const [isPosting, setIsPosting] = useState(false)
+  const [isOptimizing, setIsOptimizing] = useState(false)
   const [result, setResult] = useState(null)
+  const [optimizationStats, setOptimizationStats] = useState(null)
   const fileInputRef = useRef(null)
 
-  const handleFileSelect = (e) => {
+  const handleFileSelect = async (e) => {
     const file = e.target.files[0]
     if (file) {
       // Validate file type
@@ -38,13 +41,57 @@ function BulletinCreator({ user }) {
         return
       }
 
-      setPosterFile(file)
-      setResult(null)
-      
-      // Create preview
+      // Read file as base64
       const reader = new FileReader()
-      reader.onloadend = () => {
-        setPosterPreview(reader.result)
+      reader.onloadend = async () => {
+        const base64Data = reader.result
+        
+        // Show processing state
+        setIsOptimizing(true)
+        setResult({ success: true, message: 'Validating and optimizing image...' })
+        setPosterPreview(base64Data) // Show original as preview while processing
+        
+        try {
+          // Validate aspect ratio (8.5" x 11") and optimize
+          const optimizeResult = await window.electronAPI.image.optimizePoster(base64Data)
+          
+          if (!optimizeResult.success) {
+            // Wrong aspect ratio or other error
+            setResult({ 
+              success: false, 
+              message: optimizeResult.error || 'Image validation failed. Please use an 8.5" × 11" (portrait) image.'
+            })
+            setPosterFile(null)
+            setPosterPreview(null)
+            setOptimizedPoster(null)
+            setOptimizationStats(null)
+            if (fileInputRef.current) {
+              fileInputRef.current.value = ''
+            }
+            return
+          }
+          
+          // Success - use optimized image
+          setPosterFile(file)
+          setPosterPreview(optimizeResult.data) // Show optimized version
+          setOptimizedPoster(optimizeResult.data)
+          setOptimizationStats(optimizeResult.stats)
+          setResult({ 
+            success: true, 
+            message: `Image optimized! ${optimizeResult.stats?.savings || ''} (${optimizeResult.stats?.dimensions?.width}×${optimizeResult.stats?.dimensions?.height}px)`
+          })
+        } catch (error) {
+          console.error('Image optimization error:', error)
+          setResult({ success: false, message: 'Failed to process image. Please try again.' })
+          setPosterFile(null)
+          setPosterPreview(null)
+          setOptimizedPoster(null)
+          if (fileInputRef.current) {
+            fileInputRef.current.value = ''
+          }
+        } finally {
+          setIsOptimizing(false)
+        }
       }
       reader.readAsDataURL(file)
     }
@@ -53,6 +100,8 @@ function BulletinCreator({ user }) {
   const handleRemovePoster = () => {
     setPosterFile(null)
     setPosterPreview(null)
+    setOptimizedPoster(null)
+    setOptimizationStats(null)
     if (fileInputRef.current) {
       fileInputRef.current.value = ''
     }
@@ -64,6 +113,8 @@ function BulletinCreator({ user }) {
     if (type === 'text') {
       setPosterFile(null)
       setPosterPreview(null)
+      setOptimizedPoster(null)
+      setOptimizationStats(null)
       if (fileInputRef.current) fileInputRef.current.value = ''
     } else {
       setTextContent('')
@@ -76,8 +127,8 @@ function BulletinCreator({ user }) {
       return
     }
 
-    if (contentType === 'poster' && !posterFile) {
-      setResult({ success: false, message: 'Please upload a poster image' })
+    if (contentType === 'poster' && (!posterFile || !optimizedPoster)) {
+      setResult({ success: false, message: 'Please upload a valid poster image (8.5" × 11" format)' })
       return
     }
 
@@ -97,18 +148,12 @@ function BulletinCreator({ user }) {
         userId: user.id
       }
 
-      // Add poster file if selected
-      if (contentType === 'poster' && posterFile) {
-        const reader = new FileReader()
-        const base64Data = await new Promise((resolve, reject) => {
-          reader.onloadend = () => resolve(reader.result)
-          reader.onerror = reject
-          reader.readAsDataURL(posterFile)
-        })
+      // Add optimized poster file if selected
+      if (contentType === 'poster' && posterFile && optimizedPoster) {
         bulletinData.posterFile = {
-          filename: posterFile.name,
-          data: base64Data,
-          mimeType: posterFile.type
+          filename: posterFile.name.replace(/\.[^.]+$/, '.jpg'), // Always JPEG after optimization
+          data: optimizedPoster,
+          mimeType: 'image/jpeg'
         }
       }
 
@@ -128,6 +173,8 @@ function BulletinCreator({ user }) {
         setContentType('poster')
         setPosterFile(null)
         setPosterPreview(null)
+        setOptimizedPoster(null)
+        setOptimizationStats(null)
         setTextContent('')
         if (fileInputRef.current) {
           fileInputRef.current.value = ''
@@ -290,9 +337,9 @@ function BulletinCreator({ user }) {
           <button 
             className="send-button"
             onClick={handlePost}
-            disabled={isPosting || !title.trim() || !subject.trim() || (contentType === 'poster' ? !posterFile : !textContent.trim())}
+            disabled={isPosting || isOptimizing || !title.trim() || !subject.trim() || (contentType === 'poster' ? !optimizedPoster : !textContent.trim())}
           >
-            {isPosting ? 'Publishing...' : 'Publish Bulletin'}
+            {isPosting ? 'Publishing...' : isOptimizing ? 'Optimizing Image...' : 'Publish Bulletin'}
           </button>
         </div>
       </div>
