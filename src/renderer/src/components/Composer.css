@@ -431,3 +431,113 @@
   background: rgba(255, 255, 255, 0.15);
   color: #ffffff;
 }
+
+/* Rich Text Editor (Quill) Styles */
+.quill-wrapper {
+  border-radius: 8px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  transition: all 0.2s ease;
+}
+
+.quill-wrapper:focus-within {
+  border-color: #00d9ff;
+  box-shadow: 0 0 0 3px rgba(0, 217, 255, 0.1);
+}
+
+.quill-wrapper .ql-toolbar {
+  border: none;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.quill-wrapper .ql-toolbar .ql-stroke {
+  stroke: rgba(255, 255, 255, 0.7);
+}
+
+.quill-wrapper .ql-toolbar .ql-fill {
+  fill: rgba(255, 255, 255, 0.7);
+}
+
+.quill-wrapper .ql-toolbar .ql-picker {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.quill-wrapper .ql-toolbar button:hover .ql-stroke,
+.quill-wrapper .ql-toolbar button.ql-active .ql-stroke {
+  stroke: #00d9ff;
+}
+
+.quill-wrapper .ql-toolbar button:hover .ql-fill,
+.quill-wrapper .ql-toolbar button.ql-active .ql-fill {
+  fill: #00d9ff;
+}
+
+.quill-wrapper .ql-toolbar .ql-picker-label:hover,
+.quill-wrapper .ql-toolbar .ql-picker-label.ql-active {
+  color: #00d9ff;
+}
+
+.quill-wrapper .ql-toolbar .ql-picker-options {
+  background: #1a1a2e;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+
+.quill-wrapper .ql-toolbar .ql-picker-item:hover {
+  color: #00d9ff;
+}
+
+.quill-wrapper .ql-container {
+  border: none;
+  font-family: inherit;
+  font-size: 1rem;
+}
+
+.quill-wrapper .ql-editor {
+  min-height: 200px;
+  color: #ffffff;
+  padding: 1rem;
+  line-height: 1.6;
+}
+
+.quill-wrapper .ql-editor.ql-blank::before {
+  color: rgba(255, 255, 255, 0.4);
+  font-style: normal;
+}
+
+.quill-wrapper .ql-editor h1,
+.quill-wrapper .ql-editor h2,
+.quill-wrapper .ql-editor h3 {
+  color: #ffffff;
+}
+
+.quill-wrapper .ql-editor a {
+  color: #00d9ff;
+}
+
+/* Loading fallback for lazy-loaded forms */
+.loading-form {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 300px;
+  gap: 1rem;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.loading-form .loading-spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid rgba(255, 255, 255, 0.1);
+  border-top-color: #00d9ff;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}

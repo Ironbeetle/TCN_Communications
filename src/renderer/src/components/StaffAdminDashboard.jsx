@@ -1,9 +1,18 @@
-import { useState, useEffect } from 'react'
-import Communications from './Communications'
-import Forms from './Forms'
-import UserEditor from './UserEditor'
+import { useState, useEffect, lazy, Suspense } from 'react'
 import './Dashboard.css'
 import './StaffAdminDashboard.css'
+
+// Lazy load heavy components that contain rich editors
+const Communications = lazy(() => import('./Communications'))
+const Forms = lazy(() => import('./Forms'))
+const UserEditor = lazy(() => import('./UserEditor'))
+
+const ViewLoadingFallback = () => (
+  <div className="view-loading">
+    <div className="loading-spinner"></div>
+    <p>Loading...</p>
+  </div>
+)
 
 function StaffAdminDashboard({ user, onLogout, isFullAdmin = false }) {
   const [activeView, setActiveView] = useState('home')
@@ -826,18 +835,24 @@ function StaffAdminDashboard({ user, onLogout, isFullAdmin = false }) {
               <h2>Member Communications</h2>
               <p>Send messages to TCN community members</p>
             </div>
-            <Communications user={user} />
+            <Suspense fallback={<ViewLoadingFallback />}>
+              <Communications user={user} />
+            </Suspense>
           </div>
         )}
 
         {/* FORMS VIEW */}
         {activeView === 'forms' && (
-          <Forms user={user} />
+          <Suspense fallback={<ViewLoadingFallback />}>
+            <Forms user={user} />
+          </Suspense>
         )}
 
         {/* STAFF VIEW - Admin only */}
         {activeView === 'staff' && isFullAdmin && (
-          <UserEditor currentUser={user} />
+          <Suspense fallback={<ViewLoadingFallback />}>
+            <UserEditor currentUser={user} />
+          </Suspense>
         )}
       </main>
 

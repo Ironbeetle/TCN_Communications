@@ -1,19 +1,38 @@
-import { useState } from 'react'
+import { useState, lazy, Suspense } from 'react'
 import './Composer.css'
-import PosterBulletinForm from './PosterBulletinForm'
-import TextBulletinForm from './TextBulletinForm'
+
+// Lazy load bulletin forms (TextBulletinForm includes heavy React-Quill editor)
+const PosterBulletinForm = lazy(() => import('./PosterBulletinForm'))
+const TextBulletinForm = lazy(() => import('./TextBulletinForm'))
+
+const LoadingFallback = () => (
+  <div className="composer">
+    <div className="loading-form">
+      <div className="loading-spinner"></div>
+      <p>Loading editor...</p>
+    </div>
+  </div>
+)
 
 function BulletinCreator({ user }) {
   const [selectedType, setSelectedType] = useState(null) // null = selector view, 'poster' or 'text' = form view
 
   // Show poster form
   if (selectedType === 'poster') {
-    return <PosterBulletinForm user={user} onBack={() => setSelectedType(null)} />
+    return (
+      <Suspense fallback={<LoadingFallback />}>
+        <PosterBulletinForm user={user} onBack={() => setSelectedType(null)} />
+      </Suspense>
+    )
   }
 
   // Show text form
   if (selectedType === 'text') {
-    return <TextBulletinForm user={user} onBack={() => setSelectedType(null)} />
+    return (
+      <Suspense fallback={<LoadingFallback />}>
+        <TextBulletinForm user={user} onBack={() => setSelectedType(null)} />
+      </Suspense>
+    )
   }
 
   // Selector view

@@ -1,11 +1,20 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, lazy, Suspense } from 'react'
 import SmsComposer from './SmsComposer'
 import EmailComposer from './EmailComposer'
 import BulletinCreator from './BulletinCreator'
-import Forms from './Forms'
 import TimesheetForm from './TimesheetForm'
 import TravelForm from './TravelForm'
 import './Dashboard.css'
+
+// Lazy load Forms component (heavy)
+const Forms = lazy(() => import('./Forms'))
+
+const ViewLoadingFallback = () => (
+  <div className="view-loading">
+    <div className="loading-spinner"></div>
+    <p>Loading...</p>
+  </div>
+)
 
 function Dashboard({ user, onLogout }) {
   const [activeView, setActiveView] = useState('home')
@@ -392,7 +401,9 @@ function Dashboard({ user, onLogout }) {
         )}
 
         {activeView === 'forms' && (
-          <Forms user={user} />
+          <Suspense fallback={<ViewLoadingFallback />}>
+            <Forms user={user} />
+          </Suspense>
         )}
       </main>
     </div>

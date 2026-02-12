@@ -1,5 +1,29 @@
 import { useState } from 'react'
+import ReactQuill from 'react-quill-new'
+import 'react-quill-new/dist/quill.snow.css'
 import './Composer.css'
+
+const QUILL_MODULES = {
+  toolbar: [
+    [{ 'header': [1, 2, 3, false] }],
+    ['bold', 'italic', 'underline', 'strike'],
+    [{ 'color': [] }, { 'background': [] }],
+    [{ 'list': 'ordered' }, { 'list': 'bullet' }],
+    [{ 'indent': '-1' }, { 'indent': '+1' }],
+    [{ 'align': [] }],
+    ['link'],
+    ['clean']
+  ]
+}
+
+const QUILL_FORMATS = [
+  'header',
+  'bold', 'italic', 'underline', 'strike',
+  'color', 'background',
+  'list', 'bullet', 'indent',
+  'align',
+  'link'
+]
 
 const CATEGORIES = [
   { value: 'CHIEFNCOUNCIL', label: 'Chief & Council' },
@@ -19,13 +43,20 @@ function TextBulletinForm({ user, onBack }) {
   const [isPosting, setIsPosting] = useState(false)
   const [result, setResult] = useState(null)
 
+  // Helper to check if Quill content is empty
+  const isContentEmpty = (content) => {
+    if (!content) return true
+    const strippedContent = content.replace(/<[^>]*>/g, '').trim()
+    return strippedContent.length === 0
+  }
+
   const handlePost = async () => {
     if (!title.trim() || !subject.trim()) {
       setResult({ success: false, message: 'Please fill in title and subject' })
       return
     }
 
-    if (!textContent.trim()) {
+    if (isContentEmpty(textContent)) {
       setResult({ success: false, message: 'Please enter text content' })
       return
     }
@@ -39,7 +70,7 @@ function TextBulletinForm({ user, onBack }) {
         subject,
         category,
         userId: user.id,
-        content: textContent.trim()
+        content: textContent
       }
 
       const response = await window.electronAPI.bulletin.create(bulletinData)
@@ -77,14 +108,16 @@ function TextBulletinForm({ user, onBack }) {
         <div className="composer-section">
           <label htmlFor="textContent">Bulletin Text <span className="required">*</span></label>
           <p className="field-hint">Enter the text content for your bulletin</p>
-          <textarea
-            id="textContent"
-            value={textContent}
-            onChange={(e) => setTextContent(e.target.value)}
-            placeholder="Enter bulletin content here..."
-            rows={8}
-            className="composer-textarea"
-          />
+          <div className="quill-wrapper">
+            <ReactQuill
+              theme="snow"
+              value={textContent}
+              onChange={setTextContent}
+              modules={QUILL_MODULES}
+              formats={QUILL_FORMATS}
+              placeholder="Enter bulletin content here..."
+            />
+          </div>
         </div>
 
         <div className="composer-row">
@@ -137,7 +170,7 @@ function TextBulletinForm({ user, onBack }) {
           <button 
             className="send-button"
             onClick={handlePost}
-            disabled={isPosting || !title.trim() || !subject.trim() || !textContent.trim()}
+            disabled={isPosting || !title.trim() || !subject.trim() || isContentEmpty(textContent)}
           >
             {isPosting ? 'Publishing...' : 'Publish Text Bulletin'}
           </button>

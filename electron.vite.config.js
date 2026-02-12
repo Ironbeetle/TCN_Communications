@@ -15,6 +15,21 @@ export default defineConfig({
         '@': resolve('src/renderer/src')
       }
     },
-    plugins: [react()]
+    plugins: [react()],
+    build: {
+      rollupOptions: {
+        output: {
+          // Manual chunk splitting for better caching and lazy loading
+          manualChunks: {
+            // Vendor chunks - rarely change, cached separately
+            'react-vendor': ['react', 'react-dom'],
+            'quill': ['react-quill-new', 'quill'],
+            'state': ['zustand']
+          }
+        }
+      },
+      // Increase chunk size warning limit for Electron (local loading)
+      chunkSizeWarningLimit: 1000
+    }
   }
 })

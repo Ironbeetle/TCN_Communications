@@ -1,9 +1,18 @@
-import { useState, useEffect } from 'react'
-import Communications from './Communications'
-import UserEditor from './UserEditor'
-import Forms from './Forms'
+import { useState, useEffect, lazy, Suspense } from 'react'
 import './Dashboard.css'
 import './AdminDashboard.css'
+
+// Lazy load heavy components
+const Communications = lazy(() => import('./Communications'))
+const UserEditor = lazy(() => import('./UserEditor'))
+const Forms = lazy(() => import('./Forms'))
+
+const ViewLoadingFallback = () => (
+  <div className="view-loading">
+    <div className="loading-spinner"></div>
+    <p>Loading...</p>
+  </div>
+)
 
 function AdminDashboard({ user, onLogout }) {
   const [activeView, setActiveView] = useState('home')
@@ -181,15 +190,21 @@ function AdminDashboard({ user, onLogout }) {
         )}
 
         {activeView === 'users' && (
-          <UserEditor currentUser={user} />
+          <Suspense fallback={<ViewLoadingFallback />}>
+            <UserEditor currentUser={user} />
+          </Suspense>
         )}
 
         {activeView === 'communications' && (
-          <Communications user={user} />
+          <Suspense fallback={<ViewLoadingFallback />}>
+            <Communications user={user} />
+          </Suspense>
         )}
 
         {activeView === 'forms' && (
-          <Forms user={user} />
+          <Suspense fallback={<ViewLoadingFallback />}>
+            <Forms user={user} />
+          </Suspense>
         )}
       </main>
     </div>
