@@ -142,16 +142,37 @@ export async function createBulletin({ title, subject, category, posterFile, con
         return { success: false, message: createResult.error || 'Failed to create bulletin' }
       }
 
+      const bulletinId = createResult.data?.id || createResult.id
+
+      // Sync to portal bulletin table (user-facing)
+      const syncResult = await apiRequest('/api/sync/bulletin', {
+        method: 'POST',
+        body: JSON.stringify({
+          sourceId: bulletinId,
+          title,
+          subject,
+          content: content.trim(),
+          category: category || 'ANNOUNCEMENTS',
+          userId
+        })
+      })
+
+      console.log('Portal sync result:', JSON.stringify(syncResult, null, 2))
+
+      if (!syncResult.success) {
+        console.error('Portal sync failed:', syncResult.error)
+      }
+
       return {
         success: true,
         message: 'Bulletin posted successfully',
         bulletin: {
-          id: createResult.data.id,
+          id: bulletinId,
           title,
           subject,
           content: content.trim(),
           category,
-          synced: true
+          synced: syncResult.success
         }
       }
     }
@@ -215,6 +236,25 @@ export async function createBulletin({ title, subject, category, posterFile, con
       }
     }
 
+    // Sync to portal bulletin table (user-facing)
+    const syncResult = await apiRequest('/api/sync/bulletin', {
+      method: 'POST',
+      body: JSON.stringify({
+        sourceId: bulletinId,
+        title,
+        subject,
+        poster_url: uploadResult.poster_url,
+        category: category || 'ANNOUNCEMENTS',
+        userId
+      })
+    })
+
+    console.log('Portal sync result:', JSON.stringify(syncResult, null, 2))
+
+    if (!syncResult.success) {
+      console.error('Portal sync failed:', syncResult.error)
+    }
+
     return {
       success: true,
       message: 'Bulletin posted successfully',
@@ -224,7 +264,7 @@ export async function createBulletin({ title, subject, category, posterFile, con
         subject,
         poster_url: uploadResult.poster_url,
         category,
-        synced: true
+        synced: syncResult.success
       }
     }
   } catch (error) {

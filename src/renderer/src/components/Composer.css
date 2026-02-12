@@ -350,3 +350,84 @@
   min-height: 200px;
   line-height: 1.6;
 }
+
+/* Bulletin Type Selector */
+.bulletin-type-selector {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1.5rem;
+  padding: 1rem 0;
+}
+
+.bulletin-type-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  padding: 2rem 1.5rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: center;
+}
+
+.bulletin-type-card:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: #00d9ff;
+  transform: translateY(-2px);
+}
+
+.bulletin-type-card .type-icon {
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 217, 255, 0.1);
+  border-radius: 12px;
+}
+
+.bulletin-type-card .type-icon svg {
+  width: 28px;
+  height: 28px;
+  stroke: #00d9ff;
+}
+
+.bulletin-type-card h3 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #ffffff;
+  margin: 0;
+}
+
+.bulletin-type-card p {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.6);
+  margin: 0;
+}
+
+/* Header with Back Button */
+.header-with-back {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.back-button {
+  padding: 0.5rem 1rem;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.back-button:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: #ffffff;
+}

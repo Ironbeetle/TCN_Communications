@@ -742,16 +742,32 @@ async function createBulletin({ title, subject, category, posterFile, content, u
       if (!createResult2.success) {
         return { success: false, message: createResult2.error || "Failed to create bulletin" };
       }
+      const bulletinId2 = createResult2.data?.id || createResult2.id;
+      const syncResult2 = await apiRequest("/api/sync/bulletin", {
+        method: "POST",
+        body: JSON.stringify({
+          sourceId: bulletinId2,
+          title,
+          subject,
+          content: content.trim(),
+          category: category || "ANNOUNCEMENTS",
+          userId
+        })
+      });
+      console.log("Portal sync result:", JSON.stringify(syncResult2, null, 2));
+      if (!syncResult2.success) {
+        console.error("Portal sync failed:", syncResult2.error);
+      }
       return {
         success: true,
         message: "Bulletin posted successfully",
         bulletin: {
-          id: createResult2.data.id,
+          id: bulletinId2,
           title,
           subject,
           content: content.trim(),
           category,
-          synced: true
+          synced: syncResult2.success
         }
       };
     }
@@ -799,6 +815,21 @@ async function createBulletin({ title, subject, category, posterFile, content, u
         bulletin: { id: bulletinId, title, subject, poster_url: uploadResult.poster_url, synced: false }
       };
     }
+    const syncResult = await apiRequest("/api/sync/bulletin", {
+      method: "POST",
+      body: JSON.stringify({
+        sourceId: bulletinId,
+        title,
+        subject,
+        poster_url: uploadResult.poster_url,
+        category: category || "ANNOUNCEMENTS",
+        userId
+      })
+    });
+    console.log("Portal sync result:", JSON.stringify(syncResult, null, 2));
+    if (!syncResult.success) {
+      console.error("Portal sync failed:", syncResult.error);
+    }
     return {
       success: true,
       message: "Bulletin posted successfully",
@@ -808,7 +839,7 @@ async function createBulletin({ title, subject, category, posterFile, content, u
         subject,
         poster_url: uploadResult.poster_url,
         category,
-        synced: true
+        synced: syncResult.success
       }
     };
   } catch (error) {
