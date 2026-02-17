@@ -16,7 +16,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
   },
   // Email
   email: {
-    send: (subject, message, recipients, attachments, userId) => ipcRenderer.invoke("email:send", { subject, message, recipients, attachments, userId }),
+    send: (subject, message, recipients, attachments, userId, letterheadConfig) => ipcRenderer.invoke("email:send", { subject, message, recipients, attachments, userId, letterheadConfig }),
     getHistory: (userId, limit) => ipcRenderer.invoke("email:getHistory", { userId, limit })
   },
   // Contacts

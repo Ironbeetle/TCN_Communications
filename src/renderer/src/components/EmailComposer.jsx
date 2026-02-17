@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import MemberSearch from './MemberSearch'
+import LetterheadSelector from './LetterheadSelector'
+import { getDefaultLogo } from '../config/logos'
 import './Composer.css'
 
 function EmailComposer({ user }) {
@@ -8,6 +10,8 @@ function EmailComposer({ user }) {
   const [recipients, setRecipients] = useState([])
   const [isSending, setIsSending] = useState(false)
   const [result, setResult] = useState(null)
+  const [useLetterhead, setUseLetterhead] = useState(true)
+  const [selectedLogoId, setSelectedLogoId] = useState(getDefaultLogo()?.id || 'tcn-main')
 
   const handleSend = async () => {
     if (!subject.trim() || !message.trim() || recipients.length === 0) {
@@ -20,7 +24,8 @@ function EmailComposer({ user }) {
 
     try {
       const emails = recipients.map(r => r.email).filter(Boolean)
-      const response = await window.electronAPI.email.send(subject, message, emails, null, user.id)
+      const letterheadConfig = useLetterhead ? { enabled: true, logoId: selectedLogoId } : { enabled: false }
+      const response = await window.electronAPI.email.send(subject, message, emails, null, user.id, letterheadConfig)
       setResult(response)
       
       if (response.success) {
@@ -92,6 +97,14 @@ function EmailComposer({ user }) {
             rows={10}
           />
         </div>
+
+        {/* Letterhead Toggle with Logo Selection */}
+        <LetterheadSelector
+          useLetterhead={useLetterhead}
+          setUseLetterhead={setUseLetterhead}
+          selectedLogoId={selectedLogoId}
+          setSelectedLogoId={setSelectedLogoId}
+        />
 
         {result && (
           <div className={`result-message ${result.success ? 'success' : 'error'}`}>

@@ -3,17 +3,30 @@
 
 import sharp from 'sharp'
 
-// Target dimensions for bulletin posters (8.5" x 11" at 72 DPI)
-const TARGET_WIDTH = 612
-const TARGET_HEIGHT = 792
-const ASPECT_RATIO = 8.5 / 11 // 0.773
+// Target dimensions for bulletin posters (72 DPI)
+const POSTER_SPECS = [
+  {
+    key: 'letter',
+    width: 612,
+    height: 792,
+    ratio: 8.5 / 11,
+    label: '8.5" × 11" (portrait)'
+  },
+  {
+    key: 'legal',
+    width: 612,
+    height: 1008,
+    ratio: 8.5 / 14,
+    label: '8.5" × 14" (legal, portrait)'
+  }
+]
 const ASPECT_RATIO_TOLERANCE = 0.05 // 5% tolerance
 const JPEG_QUALITY = 85
 
 /**
- * Validate that an image has the correct 8.5:11 aspect ratio
+ * Validate that an image has an approved poster aspect ratio
  * @param {Buffer} imageBuffer - The image data as a buffer
- * @returns {Promise<{valid: boolean, width: number, height: number, ratio: number, error?: string}>}
+ * @returns {Promise<{valid: boolean, width: number, height: number, ratio: number, spec?: object, error?: string}>}
  */
 export async function validateAspectRatio(imageBuffer) {
   try {
@@ -25,17 +38,21 @@ export async function validateAspectRatio(imageBuffer) {
     }
     
     const imageRatio = width / height
-    const expectedRatio = ASPECT_RATIO
-    const ratioDiff = Math.abs(imageRatio - expectedRatio) / expectedRatio
-    
-    if (ratioDiff > ASPECT_RATIO_TOLERANCE) {
-      const expectedHeight = Math.round(width / ASPECT_RATIO)
+    const matchedSpec = POSTER_SPECS.find((spec) => {
+      const ratioDiff = Math.abs(imageRatio - spec.ratio) / spec.ratio
+      return ratioDiff <= ASPECT_RATIO_TOLERANCE
+    })
+
+    if (!matchedSpec) {
+      const expectedHeights = POSTER_SPECS
+        .map((spec) => `${spec.label} ~${Math.round(width / spec.ratio)}px tall`)
+        .join(', ')
       return {
         valid: false,
         width,
         height,
         ratio: imageRatio,
-        error: `Image has wrong aspect ratio. Expected 8.5" × 11" (portrait). Your image is ${width}×${height}px. For this width, height should be approximately ${expectedHeight}px.`
+        error: `Image has wrong aspect ratio. Expected ${POSTER_SPECS.map((spec) => spec.label).join(' or ')}. Your image is ${width}×${height}px. For this width, height should be approximately ${expectedHeights}.`
       }
     }
     
@@ -43,7 +60,8 @@ export async function validateAspectRatio(imageBuffer) {
       valid: true,
       width,
       height,
-      ratio: imageRatio
+      ratio: imageRatio,
+      spec: matchedSpec
     }
   } catch (error) {
     return {
@@ -55,8 +73,8 @@ export async function validateAspectRatio(imageBuffer) {
 
 /**
  * Optimize an image for bulletin board posting
- * - Validates aspect ratio (8.5:11)
- * - Resizes to 612×792px
+ * - Validates aspect ratio (letter or legal)
+ * - Resizes to target dimensions
  * - Converts to JPEG at 85% quality
  * 
  * @param {Buffer} imageBuffer - The original image data
@@ -75,10 +93,11 @@ export async function optimizePosterImage(imageBuffer) {
     }
     
     const originalSize = imageBuffer.length
-    
+    const { width, height } = validation.spec
+
     // Resize and convert to JPEG
     const optimizedBuffer = await sharp(imageBuffer)
-      .resize(TARGET_WIDTH, TARGET_HEIGHT, {
+      .resize(width, height, {
         fit: 'fill', // Stretch to exact dimensions (aspect ratio already validated)
         withoutEnlargement: false // Allow upscaling small images
       })
@@ -96,7 +115,7 @@ export async function optimizePosterImage(imageBuffer) {
       data: base64Data,
       originalSize,
       optimizedSize: optimizedBuffer.length,
-      dimensions: { width: TARGET_WIDTH, height: TARGET_HEIGHT }
+      dimensions: { width, height }
     }
   } catch (error) {
     console.error('Image optimization failed:', error)

@@ -113,16 +113,42 @@ export async function uploadPoster({ sourceId, filename, data, mimeType }) {
 }
 
 /**
+ * Strip inline styles from HTML content, keep only tags
+ * VPS handles all styling - we just send clean semantic HTML
+ */
+function cleanContentForDisplay(htmlContent) {
+  if (!htmlContent) return ''
+  
+  // Remove style attributes from all tags
+  return htmlContent.replace(/\s*style="[^"]*"/gi, '')
+}
+
+/**
  * Create bulletin on VPS
  * Supports poster image OR text content
+ * Letterhead is handled server-side using logoId - logos are pre-uploaded to VPS
+ * @param {Object} options
+ * @param {string} options.title - Bulletin title
+ * @param {string} options.subject - Subject/summary
+ * @param {string} options.category - Category
+ * @param {Object} options.posterFile - Optional poster file { data, filename, mimeType }
+ * @param {string} options.content - Text content (HTML from rich text editor)
+ * @param {string} options.userId - User ID
+ * @param {Object} options.letterheadConfig - Letterhead config { enabled: boolean, logoId: string }
  */
-export async function createBulletin({ title, subject, category, posterFile, content, userId }) {
+export async function createBulletin({ title, subject, category, posterFile, content, userId, letterheadConfig }) {
   const hasPoster = posterFile && posterFile.data
   const hasText = content && content.trim()
 
   if (!hasPoster && !hasText) {
     return { success: false, message: 'Either a poster image or text content is required' }
   }
+
+  // Extract logoId if letterhead is enabled (VPS will handle rendering)
+  const logoId = letterheadConfig?.enabled ? (letterheadConfig.logoId || 'tcn-main') : null
+  
+  // Strip inline styles, keep only HTML tags - VPS handles styling
+  const cleanContent = hasText ? cleanContentForDisplay(content.trim()) : null
 
   try {
     // For text-only bulletins - simple create
@@ -134,7 +160,8 @@ export async function createBulletin({ title, subject, category, posterFile, con
           subject,
           category: category || 'ANNOUNCEMENTS',
           userId,
-          content: content.trim()
+          content: cleanContent,
+          logoId  // Send logoId - VPS handles letterhead rendering
         })
       })
 
@@ -151,9 +178,10 @@ export async function createBulletin({ title, subject, category, posterFile, con
           sourceId: bulletinId,
           title,
           subject,
-          content: content.trim(),
+          content: cleanContent,
           category: category || 'ANNOUNCEMENTS',
-          userId
+          userId,
+          logoId  // Send logoId - portal handles letterhead rendering
         })
       })
 
@@ -172,6 +200,7 @@ export async function createBulletin({ title, subject, category, posterFile, con
           subject,
           content: content.trim(),
           category,
+          logoId,
           synced: syncResult.success
         }
       }

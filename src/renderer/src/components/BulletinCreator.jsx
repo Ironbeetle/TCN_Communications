@@ -57,7 +57,7 @@ function BulletinCreator({ user }) {
               </svg>
             </div>
             <h3>Poster Bulletin</h3>
-            <p>Upload a poster image (8.5" × 11" format)</p>
+            <p>Upload a poster image (8.5" × 11" or 8.5" × 14" format)</p>
           </button>
 
           <button 

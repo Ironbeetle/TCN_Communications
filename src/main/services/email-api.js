@@ -2,9 +2,81 @@
 // Sends emails via Resend and logs to VPS for centralized record-keeping
 
 import { apiRequest } from './api-helpers.js'
+import { readFileSync, existsSync } from 'fs'
+import { join } from 'path'
+import { app } from 'electron'
 
 // Resend client
 let resendClient = null
+
+// Cache for logo base64 data (keyed by filename)
+const logoBase64Cache = new Map()
+
+// Logo configuration - logoId maps to filename
+const LOGO_CONFIG = {
+  'tcn-main': 'tcn-main.png',
+  'jwhc-main': 'jwhc-main.png',
+  'cscmec-main': 'cscmec-main.png',
+}
+
+// Organization names for each logo
+const LOGO_ORG_NAMES = {
+  'tcn-main': 'Tataskweyak Cree Nation',
+  'jwhc-main': 'John Wavey Health Center',
+  'cscmec-main': 'Chief Sam Cook Mahmuwee Educational Center',
+}
+
+// Default logo
+const DEFAULT_LOGO = 'tcn-main'
+
+/**
+ * Get organization name for a logo
+ */
+function getOrgName(logoId) {
+  return LOGO_ORG_NAMES[logoId] || LOGO_ORG_NAMES[DEFAULT_LOGO]
+}
+
+/**
+ * Get logo as base64 for email embedding
+ * @param {string} logoId - Logo filename
+ * @returns {string|null} Base64 data URL or null if not found
+ */
+function getLogoBase64(logoId = DEFAULT_LOGO) {
+  const filename = LOGO_CONFIG[logoId] || DEFAULT_LOGO
+  
+  // Check cache first
+  if (logoBase64Cache.has(filename)) {
+    return logoBase64Cache.get(filename)
+  }
+  
+  try {
+    const isDev = !app.isPackaged
+    let logoPath
+    
+    if (isDev) {
+      logoPath = join(process.cwd(), 'src', 'renderer', 'public', filename)
+    } else {
+      logoPath = join(process.resourcesPath, 'public', filename)
+    }
+    
+    if (!existsSync(logoPath)) {
+      console.warn(`Logo file not found: ${logoPath}`)
+      return null
+    }
+    
+    const logoBuffer = readFileSync(logoPath)
+    const ext = filename.split('.').pop().toLowerCase()
+    const mimeType = ext === 'png' ? 'image/png' : ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : 'image/png'
+    const base64Data = `data:${mimeType};base64,${logoBuffer.toString('base64')}`
+    
+    // Cache the result
+    logoBase64Cache.set(filename, base64Data)
+    return base64Data
+  } catch (error) {
+    console.error(`Failed to load logo ${filename}:`, error)
+    return null
+  }
+}
 
 async function getResendClient() {
   if (!resendClient) {
@@ -20,7 +92,17 @@ async function getResendClient() {
   return resendClient
 }
 
-function createHtmlTemplate(message, subject) {
+function createHtmlTemplate(message, subject, letterheadConfig = null) {
+  const useLetterhead = letterheadConfig?.enabled
+  const logoId = letterheadConfig?.logoId || DEFAULT_LOGO
+  const logoBase64 = useLetterhead ? getLogoBase64(logoId) : null
+  const orgName = getOrgName(logoId)
+  
+  const headerContent = logoBase64 
+    ? `<img src="${logoBase64}" alt="${orgName}" style="width: 180px; height: auto; display: block; margin-bottom: 15px;" />
+       <h2 style="color: #1a1a2e; margin: 0; font-size: 20px;">${orgName}</h2>`
+    : `<h2 style="color: #1a1a2e; margin: 0; font-size: 24px;">${orgName}</h2>`
+  
   return `
     <!DOCTYPE html>
     <html>
@@ -41,6 +123,7 @@ function createHtmlTemplate(message, subject) {
           border-bottom: 2px solid #00d9ff;
           padding-bottom: 20px;
           margin-bottom: 20px;
+          text-align: center;
         }
         .header h1 {
           color: #1a1a2e;
@@ -61,21 +144,27 @@ function createHtmlTemplate(message, subject) {
     </head>
     <body>
       <div class="header">
-        <h2>Tataskweyak Cree Nation</h2>
+        ${headerContent}
       </div>
       <div class="content">${message.replace(/\n/g, '<br>')}</div>
       <div class="footer">
-        <p>This email was sent by the Tataskweyak Cree Nation Band Office.</p>
+        <p>This email was sent by ${orgName}.</p>
       </div>
     </body>
     </html>
   `
 }
-
 /**
  * Send email via Resend and log to VPS
+ * @param {Object} options
+ * @param {string} options.subject - Email subject
+ * @param {string} options.message - Email body text
+ * @param {string[]} options.recipients - Array of email addresses
+ * @param {Array} options.attachments - Optional attachments
+ * @param {string} options.userId - Sender's user ID
+ * @param {Object} options.letterheadConfig - Letterhead configuration { enabled: boolean, logoId: string }
  */
-export async function sendEmail({ subject, message, recipients, attachments, userId }) {
+export async function sendEmail({ subject, message, recipients, attachments, userId, letterheadConfig = null }) {
   const results = {
     successful: 0,
     failed: 0,
@@ -93,7 +182,7 @@ export async function sendEmail({ subject, message, recipients, attachments, use
       throw new Error('Resend from email not configured')
     }
 
-    const htmlContent = createHtmlTemplate(message, subject)
+    const htmlContent = createHtmlTemplate(message, subject, letterheadConfig)
 
     // Prepare attachments if any
     const emailAttachments = attachments?.map(att => ({

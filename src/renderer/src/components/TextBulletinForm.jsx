@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import ReactQuill from 'react-quill-new'
 import 'react-quill-new/dist/quill.snow.css'
+import LetterheadSelector from './LetterheadSelector'
+import { getDefaultLogo } from '../config/logos'
 import './Composer.css'
 
 const QUILL_MODULES = {
@@ -42,6 +44,8 @@ function TextBulletinForm({ user, onBack }) {
   const [textContent, setTextContent] = useState('')
   const [isPosting, setIsPosting] = useState(false)
   const [result, setResult] = useState(null)
+  const [useLetterhead, setUseLetterhead] = useState(true)
+  const [selectedLogoId, setSelectedLogoId] = useState(getDefaultLogo()?.id || 'tcn-main')
 
   // Helper to check if Quill content is empty
   const isContentEmpty = (content) => {
@@ -65,12 +69,17 @@ function TextBulletinForm({ user, onBack }) {
     setResult(null)
 
     try {
+      const letterheadConfig = useLetterhead 
+        ? { enabled: true, logoId: selectedLogoId } 
+        : { enabled: false }
+      
       const bulletinData = {
         title,
         subject,
         category,
         userId: user.id,
-        content: textContent
+        content: textContent,
+        letterheadConfig
       }
 
       const response = await window.electronAPI.bulletin.create(bulletinData)
@@ -119,6 +128,14 @@ function TextBulletinForm({ user, onBack }) {
             />
           </div>
         </div>
+
+        {/* Letterhead Toggle with Logo Selection */}
+        <LetterheadSelector
+          useLetterhead={useLetterhead}
+          setUseLetterhead={setUseLetterhead}
+          selectedLogoId={selectedLogoId}
+          setSelectedLogoId={setSelectedLogoId}
+        />
 
         <div className="composer-row">
           <div className="composer-section" style={{ flex: 2 }}>

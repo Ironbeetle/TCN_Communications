@@ -173,8 +173,8 @@ ipcMain.handle('sms:getHistory', async (event, { userId, limit }) => {
 })
 
 // IPC Handlers - Email
-ipcMain.handle('email:send', async (event, { subject, message, recipients, attachments, userId }) => {
-  return await sendEmail({ subject, message, recipients, attachments, userId })
+ipcMain.handle('email:send', async (event, { subject, message, recipients, attachments, userId, letterheadConfig }) => {
+  return await sendEmail({ subject, message, recipients, attachments, userId, letterheadConfig })
 })
 
 ipcMain.handle('email:getHistory', async (event, { userId, limit }) => {

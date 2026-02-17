@@ -3,6 +3,7 @@ import path, { join } from "path";
 import { fileURLToPath } from "url";
 import { config } from "dotenv";
 import Store from "electron-store";
+import { existsSync, readFileSync } from "fs";
 import { mkdir, writeFile } from "fs/promises";
 import sharp from "sharp";
 import __cjs_mod__ from "node:module";
@@ -382,6 +383,49 @@ async function getSmsHistory(userId, limit = 50) {
   }
 }
 let resendClient = null;
+const logoBase64Cache = /* @__PURE__ */ new Map();
+const LOGO_CONFIG = {
+  "tcn-main": "tcn-main.png",
+  "jwhc-main": "jwhc-main.png",
+  "cscmec-main": "cscmec-main.png"
+};
+const LOGO_ORG_NAMES = {
+  "tcn-main": "Tataskweyak Cree Nation",
+  "jwhc-main": "John Wavey Health Center",
+  "cscmec-main": "Chief Sam Cook Mahmuwee Educational Center"
+};
+const DEFAULT_LOGO = "tcn-main";
+function getOrgName(logoId) {
+  return LOGO_ORG_NAMES[logoId] || LOGO_ORG_NAMES[DEFAULT_LOGO];
+}
+function getLogoBase64(logoId = DEFAULT_LOGO) {
+  const filename = LOGO_CONFIG[logoId] || DEFAULT_LOGO;
+  if (logoBase64Cache.has(filename)) {
+    return logoBase64Cache.get(filename);
+  }
+  try {
+    const isDev = !app.isPackaged;
+    let logoPath;
+    if (isDev) {
+      logoPath = join(process.cwd(), "src", "renderer", "public", filename);
+    } else {
+      logoPath = join(process.resourcesPath, "public", filename);
+    }
+    if (!existsSync(logoPath)) {
+      console.warn(`Logo file not found: ${logoPath}`);
+      return null;
+    }
+    const logoBuffer = readFileSync(logoPath);
+    const ext = filename.split(".").pop().toLowerCase();
+    const mimeType = ext === "png" ? "image/png" : ext === "jpg" || ext === "jpeg" ? "image/jpeg" : "image/png";
+    const base64Data = `data:${mimeType};base64,${logoBuffer.toString("base64")}`;
+    logoBase64Cache.set(filename, base64Data);
+    return base64Data;
+  } catch (error) {
+    console.error(`Failed to load logo ${filename}:`, error);
+    return null;
+  }
+}
 async function getResendClient() {
   if (!resendClient) {
     const { Resend } = await import("resend");
@@ -393,7 +437,13 @@ async function getResendClient() {
   }
   return resendClient;
 }
-function createHtmlTemplate(message, subject) {
+function createHtmlTemplate(message, subject, letterheadConfig = null) {
+  const useLetterhead = letterheadConfig?.enabled;
+  const logoId = letterheadConfig?.logoId || DEFAULT_LOGO;
+  const logoBase64 = useLetterhead ? getLogoBase64(logoId) : null;
+  const orgName = getOrgName(logoId);
+  const headerContent = logoBase64 ? `<img src="${logoBase64}" alt="${orgName}" style="width: 180px; height: auto; display: block; margin-bottom: 15px;" />
+       <h2 style="color: #1a1a2e; margin: 0; font-size: 20px;">${orgName}</h2>` : `<h2 style="color: #1a1a2e; margin: 0; font-size: 24px;">${orgName}</h2>`;
   return `
     <!DOCTYPE html>
     <html>
@@ -414,6 +464,7 @@ function createHtmlTemplate(message, subject) {
           border-bottom: 2px solid #00d9ff;
           padding-bottom: 20px;
           margin-bottom: 20px;
+          text-align: center;
         }
         .header h1 {
           color: #1a1a2e;
@@ -434,17 +485,17 @@ function createHtmlTemplate(message, subject) {
     </head>
     <body>
       <div class="header">
-        <h2>Tataskweyak Cree Nation</h2>
+        ${headerContent}
       </div>
       <div class="content">${message.replace(/\n/g, "<br>")}</div>
       <div class="footer">
-        <p>This email was sent by the Tataskweyak Cree Nation Band Office.</p>
+        <p>This email was sent by ${orgName}.</p>
       </div>
     </body>
     </html>
   `;
 }
-async function sendEmail({ subject, message, recipients, attachments, userId }) {
+async function sendEmail({ subject, message, recipients, attachments, userId, letterheadConfig = null }) {
   const results = {
     successful: 0,
     failed: 0,
@@ -459,7 +510,7 @@ async function sendEmail({ subject, message, recipients, attachments, userId }) 
     if (!fromEmail) {
       throw new Error("Resend from email not configured");
     }
-    const htmlContent = createHtmlTemplate(message, subject);
+    const htmlContent = createHtmlTemplate(message, subject, letterheadConfig);
     const emailAttachments = attachments?.map((att) => ({
       filename: att.filename,
       content: att.content
@@ -721,12 +772,18 @@ async function uploadPoster({ sourceId, filename, data, mimeType }) {
     };
   }
 }
-async function createBulletin({ title, subject, category, posterFile, content, userId }) {
+function cleanContentForDisplay(htmlContent) {
+  if (!htmlContent) return "";
+  return htmlContent.replace(/\s*style="[^"]*"/gi, "");
+}
+async function createBulletin({ title, subject, category, posterFile, content, userId, letterheadConfig }) {
   const hasPoster = posterFile && posterFile.data;
   const hasText = content && content.trim();
   if (!hasPoster && !hasText) {
     return { success: false, message: "Either a poster image or text content is required" };
   }
+  const logoId = letterheadConfig?.enabled ? letterheadConfig.logoId || "tcn-main" : null;
+  const cleanContent = hasText ? cleanContentForDisplay(content.trim()) : null;
   try {
     if (hasText && !hasPoster) {
       const createResult2 = await apiRequest("/api/comm/bulletin", {
@@ -736,7 +793,9 @@ async function createBulletin({ title, subject, category, posterFile, content, u
           subject,
           category: category || "ANNOUNCEMENTS",
           userId,
-          content: content.trim()
+          content: cleanContent,
+          logoId
+          // Send logoId - VPS handles letterhead rendering
         })
       });
       if (!createResult2.success) {
@@ -749,9 +808,11 @@ async function createBulletin({ title, subject, category, posterFile, content, u
           sourceId: bulletinId2,
           title,
           subject,
-          content: content.trim(),
+          content: cleanContent,
           category: category || "ANNOUNCEMENTS",
-          userId
+          userId,
+          logoId
+          // Send logoId - portal handles letterhead rendering
         })
       });
       console.log("Portal sync result:", JSON.stringify(syncResult2, null, 2));
@@ -767,6 +828,7 @@ async function createBulletin({ title, subject, category, posterFile, content, u
           subject,
           content: content.trim(),
           category,
+          logoId,
           synced: syncResult2.success
         }
       };
@@ -1525,9 +1587,22 @@ async function markMemoAsRead(memoId, userId) {
     return { success: false, error: error.message };
   }
 }
-const TARGET_WIDTH = 612;
-const TARGET_HEIGHT = 792;
-const ASPECT_RATIO = 8.5 / 11;
+const POSTER_SPECS = [
+  {
+    key: "letter",
+    width: 612,
+    height: 792,
+    ratio: 8.5 / 11,
+    label: '8.5" × 11" (portrait)'
+  },
+  {
+    key: "legal",
+    width: 612,
+    height: 1008,
+    ratio: 8.5 / 14,
+    label: '8.5" × 14" (legal, portrait)'
+  }
+];
 const ASPECT_RATIO_TOLERANCE = 0.05;
 const JPEG_QUALITY = 85;
 async function validateAspectRatio(imageBuffer) {
@@ -1538,23 +1613,26 @@ async function validateAspectRatio(imageBuffer) {
       return { valid: false, error: "Unable to read image dimensions" };
     }
     const imageRatio = width / height;
-    const expectedRatio = ASPECT_RATIO;
-    const ratioDiff = Math.abs(imageRatio - expectedRatio) / expectedRatio;
-    if (ratioDiff > ASPECT_RATIO_TOLERANCE) {
-      const expectedHeight = Math.round(width / ASPECT_RATIO);
+    const matchedSpec = POSTER_SPECS.find((spec) => {
+      const ratioDiff = Math.abs(imageRatio - spec.ratio) / spec.ratio;
+      return ratioDiff <= ASPECT_RATIO_TOLERANCE;
+    });
+    if (!matchedSpec) {
+      const expectedHeights = POSTER_SPECS.map((spec) => `${spec.label} ~${Math.round(width / spec.ratio)}px tall`).join(", ");
       return {
         valid: false,
         width,
         height,
         ratio: imageRatio,
-        error: `Image has wrong aspect ratio. Expected 8.5" × 11" (portrait). Your image is ${width}×${height}px. For this width, height should be approximately ${expectedHeight}px.`
+        error: `Image has wrong aspect ratio. Expected ${POSTER_SPECS.map((spec) => spec.label).join(" or ")}. Your image is ${width}×${height}px. For this width, height should be approximately ${expectedHeights}.`
       };
     }
     return {
       valid: true,
       width,
       height,
-      ratio: imageRatio
+      ratio: imageRatio,
+      spec: matchedSpec
     };
   } catch (error) {
     return {
@@ -1573,7 +1651,8 @@ async function optimizePosterImage(imageBuffer) {
       };
     }
     const originalSize = imageBuffer.length;
-    const optimizedBuffer = await sharp(imageBuffer).resize(TARGET_WIDTH, TARGET_HEIGHT, {
+    const { width, height } = validation.spec;
+    const optimizedBuffer = await sharp(imageBuffer).resize(width, height, {
       fit: "fill",
       // Stretch to exact dimensions (aspect ratio already validated)
       withoutEnlargement: false
@@ -1589,7 +1668,7 @@ async function optimizePosterImage(imageBuffer) {
       data: base64Data,
       originalSize,
       optimizedSize: optimizedBuffer.length,
-      dimensions: { width: TARGET_WIDTH, height: TARGET_HEIGHT }
+      dimensions: { width, height }
     };
   } catch (error) {
     console.error("Image optimization failed:", error);
@@ -1673,8 +1752,8 @@ ipcMain.handle("sms:send", async (event, { message, recipients, userId }) => {
 ipcMain.handle("sms:getHistory", async (event, { userId, limit }) => {
   return await getSmsHistory(userId, limit);
 });
-ipcMain.handle("email:send", async (event, { subject, message, recipients, attachments, userId }) => {
-  return await sendEmail({ subject, message, recipients, attachments, userId });
+ipcMain.handle("email:send", async (event, { subject, message, recipients, attachments, userId, letterheadConfig }) => {
+  return await sendEmail({ subject, message, recipients, attachments, userId, letterheadConfig });
 });
 ipcMain.handle("email:getHistory", async (event, { userId, limit }) => {
   return await getEmailHistory(userId, limit);

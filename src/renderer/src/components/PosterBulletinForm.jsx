@@ -51,7 +51,7 @@ function PosterBulletinForm({ user, onBack }) {
           if (!optimizeResult.success) {
             setResult({ 
               success: false, 
-              message: optimizeResult.error || 'Image validation failed. Please use an 8.5" × 11" (portrait) image.'
+              message: optimizeResult.error || 'Image validation failed. Please use an 8.5" × 11" or 8.5" × 14" (portrait) image.'
             })
             setPosterFile(null)
             setPosterPreview(null)
@@ -105,7 +105,7 @@ function PosterBulletinForm({ user, onBack }) {
     }
 
     if (!posterFile || !optimizedPoster) {
-      setResult({ success: false, message: 'Please upload a valid poster image (8.5" × 11" format)' })
+      setResult({ success: false, message: 'Please upload a valid poster image (8.5" × 11" or 8.5" × 14" format)' })
       return
     }
 
@@ -165,7 +165,7 @@ function PosterBulletinForm({ user, onBack }) {
       <div className="composer-body">
         <div className="composer-section poster-upload-section">
           <label>Poster Image <span className="required">*</span></label>
-          <p className="field-hint">Upload the poster you've created (PNG, JPG - max 10MB, 8.5" × 11" format)</p>
+          <p className="field-hint">Upload the poster you've created (PNG, JPG - max 10MB, 8.5" × 11" or 8.5" × 14" format)</p>
           
           <input
             type="file"
