@@ -1,0 +1,35 @@
+appId: com.tcn.communications
+productName: TCN Communications
+copyright: Copyright © 2026
+
+directories:
+  buildResources: build
+  output: dist
+
+files:
+  - out/**/*
+  - node_modules/**/*
+  - "!node_modules/**/*.{md,txt,map}"
+  - "!**/{test,tests,__tests__}/**"
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: build/icon.ico
+  artifactName: ${productName}-Setup-${version}.${ext}
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  deleteAppDataOnUninstall: true
+  shortcutName: TCN Communications
+  uninstallDisplayName: TCN Communications
+
+# Optional: For portable version
+# win:
+#   target:
+#     - nsis
+#     - portable
