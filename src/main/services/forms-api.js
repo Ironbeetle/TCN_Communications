@@ -305,11 +305,16 @@ export const SEMANTIC_FIELDS = [
 
 // Form categories
 export const FORM_CATEGORIES = [
-  { value: 'BAND_OFFICE', label: 'Band Office' },
-  { value: 'J_W_HEALTH_CENTER', label: 'J.W. Health Center' },
-  { value: 'CSCMEC', label: 'CSCMEC' },
-  { value: 'COUNCIL', label: 'Council' },
+  { value: 'CHIEF_COUNCIL', label: 'Chief & Council' },
+  { value: 'COMMUNITY_EVENTS', label: 'Community Events' },
+  { value: 'ECONOMIC_DEVELPMENT', label: 'Economic Development' },
+  { value: 'YOUTH', label: 'Youth' },
+  { value: 'LAND_TREATY', label: 'Land & Treaty' },
+  { value: 'CULTURAL_SPIRITUAL', label: 'Cultural & Spiritual' },
+  { value: 'EDUCATION', label: 'Education' },
+  { value: 'EMPLOYMENT', label: 'Employment' },
+  { value: 'HEALTH_FAMILY', label: 'Health & Family' },
+  { value: 'PUBLIC_WORKS', label: 'Public Works' },
   { value: 'RECREATION', label: 'Recreation' },
-  { value: 'UTILITIES', label: 'Utilities' },
-  { value: 'TRSC', label: 'TRSC' }
+  { value: 'COMMUNITY_ADMIN', label: 'Community Admin' }
 ]

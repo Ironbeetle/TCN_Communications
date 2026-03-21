@@ -110,9 +110,10 @@
 .dashboard-main {
   flex: 1;
   padding: 2rem;
-  max-width: 1400px;
+  max-width: 1800px;
   margin: 0 auto;
   width: 100%;
+  box-sizing: border-box;
 }
 
 .welcome-section {
@@ -604,7 +605,8 @@
 
 /* Composer View */
 .composer-view {
-  max-width: 800px;
+  max-width: 100%;
+  width: 100%;
   margin: 0 auto;
 }
 

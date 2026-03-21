@@ -1,9 +1,11 @@
 import { useState, useEffect, lazy, Suspense } from 'react'
+import SmsComposer from './SmsComposer'
+import EmailComposer from './EmailComposer'
+import BulletinCreator from './BulletinCreator'
 import './Dashboard.css'
 import './StaffAdminDashboard.css'
 
 // Lazy load heavy components that contain rich editors
-const Communications = lazy(() => import('./Communications'))
 const Forms = lazy(() => import('./Forms'))
 const UserEditor = lazy(() => import('./UserEditor'))
 
@@ -340,7 +342,7 @@ function StaffAdminDashboard({ user, onLogout, isFullAdmin = false }) {
               </button>
             )}
             <button 
-              className={`nav-button ${activeView === 'communications' ? 'active' : ''}`}
+              className={`nav-button ${activeView === 'communications' || activeView === 'sms' || activeView === 'email' || activeView === 'bulletin' ? 'active' : ''}`}
               onClick={() => setActiveView('communications')}
             >
               Communications
@@ -825,19 +827,60 @@ function StaffAdminDashboard({ user, onLogout, isFullAdmin = false }) {
           </div>
         )}
 
-        {/* COMMUNICATIONS VIEW */}
+        {/* COMMUNICATIONS HUB */}
         {activeView === 'communications' && (
-          <div className="communications-wrapper">
+          <>
             <div className="view-header">
-              <button className="back-button" onClick={() => setActiveView('home')}>
-                ← Back to Dashboard
-              </button>
+              <button className="back-button" onClick={() => setActiveView('home')}>← Back to Dashboard</button>
               <h2>Member Communications</h2>
               <p>Send messages to TCN community members</p>
             </div>
-            <Suspense fallback={<ViewLoadingFallback />}>
-              <Communications user={user} />
-            </Suspense>
+            <div className="dashboard-grid">
+              <div className="dashboard-card" onClick={() => setActiveView('sms')}>
+                <div className="card-icon">📱</div>
+                <h3>SMS Messages</h3>
+                <p>Send text messages to community members via SMS</p>
+                <button className="card-button">Open</button>
+              </div>
+
+              <div className="dashboard-card" onClick={() => setActiveView('email')}>
+                <div className="card-icon">📧</div>
+                <h3>Email Campaigns</h3>
+                <p>Send email campaigns with attachments to members</p>
+                <button className="card-button">Open</button>
+              </div>
+
+              <div className="dashboard-card" onClick={() => setActiveView('bulletin')}>
+                <div className="card-icon">📋</div>
+                <h3>Portal Bulletins</h3>
+                <p>Post announcements to the member portal</p>
+                <button className="card-button">Open</button>
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* SMS VIEW */}
+        {activeView === 'sms' && (
+          <div className="composer-view">
+            <button className="back-button" onClick={() => setActiveView('communications')}>← Back to Communications</button>
+            <SmsComposer user={user} />
+          </div>
+        )}
+
+        {/* EMAIL VIEW */}
+        {activeView === 'email' && (
+          <div className="composer-view">
+            <button className="back-button" onClick={() => setActiveView('communications')}>← Back to Communications</button>
+            <EmailComposer user={user} />
+          </div>
+        )}
+
+        {/* BULLETIN VIEW */}
+        {activeView === 'bulletin' && (
+          <div className="composer-view">
+            <button className="back-button" onClick={() => setActiveView('communications')}>← Back to Communications</button>
+            <BulletinCreator user={user} />
           </div>
         )}
 

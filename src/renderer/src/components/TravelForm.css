@@ -254,6 +254,12 @@
   cursor: not-allowed;
 }
 
+/* Dropdown option styling for readability */
+.form-group select option {
+  background: #1a202c;
+  color: #fff;
+}
+
 .form-group textarea {
   resize: vertical;
   min-height: 100px;

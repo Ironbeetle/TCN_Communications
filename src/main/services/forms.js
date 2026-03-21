@@ -45,7 +45,7 @@ async function syncFormToPortal(form) {
       deadline: form.deadline ? form.deadline.toISOString() : null,
       maxEntries: form.maxEntries,
       isActive: form.isActive,
-      category: form.category || 'BAND_OFFICE',
+      category: form.category || 'COMMUNITY_EVENTS',
       allowResubmit: form.allowResubmit || false,
       resubmitMessage: form.resubmitMessage || null,
       createdBy: form.createdBy,
@@ -138,7 +138,7 @@ export async function createForm({ title, description, category, deadline, maxEn
       data: {
         title,
         description: description || null,
-        category: category || 'BAND_OFFICE',
+        category: category || 'COMMUNITY_EVENTS',
         deadline: deadline ? new Date(deadline) : null,
         maxEntries: maxEntries || null,
         isActive: true,

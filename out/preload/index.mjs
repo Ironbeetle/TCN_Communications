@@ -21,10 +21,13 @@ contextBridge.exposeInMainWorld("electronAPI", {
   },
   // Contacts
   contacts: {
-    search: (searchTerm, limit) => ipcRenderer.invoke("contacts:search", { searchTerm, limit }),
+    search: (searchTerm, options) => ipcRenderer.invoke("contacts:search", { searchTerm, options }),
     getAllPhones: (limit) => ipcRenderer.invoke("contacts:getAllPhones", { limit }),
     getAllEmails: (limit) => ipcRenderer.invoke("contacts:getAllEmails", { limit }),
-    testConnection: () => ipcRenderer.invoke("contacts:testConnection")
+    getCommunities: () => ipcRenderer.invoke("contacts:getCommunities"),
+    testConnection: () => ipcRenderer.invoke("contacts:testConnection"),
+    // TEMPORARY: Get members with Profile but no fnauth (for password reset notification)
+    getAffectedMembers: () => ipcRenderer.invoke("contacts:getAffectedMembers")
   },
   // Bulletin
   bulletin: {

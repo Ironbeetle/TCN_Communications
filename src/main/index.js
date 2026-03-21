@@ -1,16 +1,30 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
 import path from 'path'
 import { fileURLToPath } from 'url'
+import { existsSync } from 'fs'
 import { config } from 'dotenv'
 
 // Get directory of this file for proper .env loading
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
-// Load environment variables from .env file in project root
-// In dev: src/main -> project root (../../.env)
-// In production: out/main -> project root (../../.env)
-config({ path: path.resolve(__dirname, '../../.env') })
+// Load environment variables from .env file
+// Check multiple locations in order of priority:
+// 1. App resources folder (for packaged production builds)
+// 2. Project root (for development)
+const envPaths = [
+  path.join(process.resourcesPath || '', '.env'),           // Production: resources folder
+  path.resolve(__dirname, '../../.env'),                     // Dev: project root from out/main
+  path.resolve(__dirname, '../../../.env'),                  // Alt: deeper nesting
+]
+
+for (const envPath of envPaths) {
+  if (existsSync(envPath)) {
+    config({ path: envPath })
+    console.log('Loaded .env from:', envPath)
+    break
+  }
+}
 
 // ==================== VPS API-BASED SERVICES ====================
 // All services now use VPS API for centralized data storage
@@ -40,7 +54,7 @@ import { sendSms, getSmsHistory, getSmsStats } from './services/sms-api.js'
 import { sendEmail, getEmailHistory, getEmailStats, sendStaffEmail, getStaffEmailHistory } from './services/email-api.js'
 
 // Contacts - reads from VPS member database (read-only)
-import { searchMembers, getAllPhoneNumbers, getAllEmails, testConnection } from './services/contacts.js'
+import { searchMembers, getAllPhoneNumbers, getAllEmails, testConnection, getCommunities, getAffectedMembers } from './services/contacts.js'
 
 // Bulletin Board - stored on VPS
 import { 
@@ -182,8 +196,10 @@ ipcMain.handle('email:getHistory', async (event, { userId, limit }) => {
 })
 
 // IPC Handlers - Contacts
-ipcMain.handle('contacts:search', async (event, { searchTerm, limit }) => {
-  return await searchMembers(searchTerm, limit)
+ipcMain.handle('contacts:search', async (event, { searchTerm, limit, options }) => {
+  // Support both old signature (searchTerm, limit) and new signature (searchTerm, options)
+  const searchOptions = options || (limit ? { limit } : {})
+  return await searchMembers(searchTerm, searchOptions)
 })
 
 ipcMain.handle('contacts:getAllPhones', async (event, { limit }) => {
@@ -194,8 +210,17 @@ ipcMain.handle('contacts:getAllEmails', async (event, { limit }) => {
   return await getAllEmails(limit)
 })
 
+ipcMain.handle('contacts:getCommunities', async () => {
+  return await getCommunities()
+})
+
 ipcMain.handle('contacts:testConnection', async () => {
   return await testConnection()
+})
+
+// TEMPORARY: Get members with Profile but no fnauth (for password reset notification)
+ipcMain.handle('contacts:getAffectedMembers', async () => {
+  return await getAffectedMembers()
 })
 
 // IPC Handlers - Bulletin

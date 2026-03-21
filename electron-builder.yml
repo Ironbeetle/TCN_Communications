@@ -12,6 +12,10 @@ files:
   - "!node_modules/**/*.{md,txt,map}"
   - "!**/{test,tests,__tests__}/**"
 
+extraResources:
+  - from: ".env"
+    to: ".env"
+
 win:
   target:
     - target: nsis

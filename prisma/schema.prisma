@@ -20,8 +20,8 @@ model User {
   last_name     String
   created       DateTime  @default(now())
   updated       DateTime  @updatedAt
-  department    String    @default("BAND_OFFICE") // BAND_OFFICE, J_W_HEALTH_CENTER, CSCMEC, COUNCIL, RECREATION, UTILITIES
-  role          String    @default("STAFF") // STAFF, STAFF_ADMIN, ADMIN, CHIEF_COUNCIL
+  department    String    @default("BAND_OFFICE") // Departments: TREATY_LAND_ENTITLEMENT, ADVERSE_AFFECTS, TRSC, CHURCH, TRADITIONAL_LIFESTYLE, EDUCATION_AUTHORITY, CSCMEC, TRADITIONAL_KNOWLEDGE, ADULT_ED, ISETS_TRAINING_EMPLOYMENT, ON_GOING_JOBS_MB_HYDRO, TCN_HEALTH, TCN_PREVENTION, JORDANS_PRINCIPLE, WAWATAY, KEEKINOW, HEADSTART, HOUSING, PUBLIC_UTILITIES, FIRE_DEPARTMENT, IRON_NORTH, WATER_TREATMENT_PLANT, NAT_RESOURCES_HELI_PAD, IT_COMMUNICATIONS, BAND_HALL, TCN_RECREATION, TCN_GAMING, ARENA, PUBLIC_SAFETY_POLICE, SOCIAL_WELFARE, JUSTICE_PROGRAM, FINANCE, TCN_TRUST, BAND_OFFICE
+  role          String    @default("STAFF") // STAFF, STAFF_ADMIN, ADMIN, COUNCIL
 
   // Authentication
   pin           String?   // 6-digit PIN for password reset
@@ -121,7 +121,7 @@ model BulletinApiLog {
   subject    String
   content    String?
   poster_url String?
-  category   String   @default("CHIEFNCOUNCIL") // CHIEFNCOUNCIL, HEALTH, EDUCATION, RECREATION, EMPLOYMENT, PROGRAM_EVENTS, ANNOUNCEMENTS
+  category   String   @default("COMMUNITY_EVENTS") // Categories: CHIEF_COUNCIL, COMMUNITY_EVENTS, ECONOMIC_DEVELPMENT, YOUTH, LAND_TREATY, CULTURAL_SPIRITUAL, EDUCATION, EMPLOYMENT, HEALTH_FAMILY, PUBLIC_WORKS, RECREATION, COMMUNITY_ADMIN
   userId     String
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   created    DateTime @default(now())
@@ -151,7 +151,7 @@ model SignUpForm {
   portalFormId    String?   @unique // Synced portal form ID
   title           String
   description     String?
-  category        String    @default("RECREATION") // Same as user departments: BAND_OFFICE, J_W_HEALTH_CENTER, CSCMEC, COUNCIL, RECREATION, UTILITIES
+  category        String    @default("COMMUNITY_EVENTS") // Categories: CHIEF_COUNCIL, COMMUNITY_EVENTS, ECONOMIC_DEVELPMENT, YOUTH, LAND_TREATY, CULTURAL_SPIRITUAL, EDUCATION, EMPLOYMENT, HEALTH_FAMILY, PUBLIC_WORKS, RECREATION, COMMUNITY_ADMIN
   deadline        DateTime?
   maxEntries      Int?
   isActive        Boolean   @default(true)

@@ -1,43 +1,46 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import './MemberSearch.css'
 
-function MemberSearch({ type, selected, onSelect }) {
+const ITEMS_PER_PAGE = 25
+const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('')
+
+function MemberSearch({ type, selected, onSelect, compact = false }) {
+  // All members (fetched once)
+  const [allMembers, setAllMembers] = useState([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [hasLoaded, setHasLoaded] = useState(false)
+  
+  // Search & Filter state
   const [searchTerm, setSearchTerm] = useState('')
-  const [searchResults, setSearchResults] = useState([])
-  const [isSearching, setIsSearching] = useState(false)
+  const [sortBy, setSortBy] = useState('name')
+  const [sortOrder, setSortOrder] = useState('asc')
+  const [selectedCommunity, setSelectedCommunity] = useState('')
+  const [communities, setCommunities] = useState([])
+  const [activeLetter, setActiveLetter] = useState('')
+  
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1)
+  
+  // UI state
   const [focusedIndex, setFocusedIndex] = useState(-1)
-  const [showResults, setShowResults] = useState(false)
-  const [hasSearched, setHasSearched] = useState(false)
   const [showAllSelected, setShowAllSelected] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [isLoadingCommunities, setIsLoadingCommunities] = useState(false)
   
   const inputRef = useRef(null)
   const resultsRef = useRef(null)
-  const searchContainerRef = useRef(null)
 
-  // Close results when clicking outside
+  // Load all members on mount
   useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (searchContainerRef.current && !searchContainerRef.current.contains(event.target)) {
-        setShowResults(false)
-        setFocusedIndex(-1)
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
+    loadAllMembers()
+    loadCommunities()
   }, [])
 
+  // Reset to page 1 when filters change
   useEffect(() => {
-    const timer = setTimeout(() => {
-      if (searchTerm.length >= 2) {
-        performSearch()
-      } else {
-        setSearchResults([])
-        setHasSearched(false)
-      }
-    }, 300)
-
-    return () => clearTimeout(timer)
-  }, [searchTerm])
+    setCurrentPage(1)
+    setFocusedIndex(-1)
+  }, [searchTerm, sortBy, sortOrder, selectedCommunity, activeLetter])
 
   // Scroll focused item into view
   useEffect(() => {
@@ -49,24 +52,130 @@ function MemberSearch({ type, selected, onSelect }) {
     }
   }, [focusedIndex])
 
-  const performSearch = async () => {
-    setIsSearching(true)
-    setHasSearched(true)
+  const loadAllMembers = async () => {
+    setIsLoading(true)
     try {
-      const response = await window.electronAPI.contacts.search(searchTerm, 50)
-      if (response.success) {
-        // Filter by type (phone or email)
-        const filtered = response.members.filter(m => 
-          type === 'phone' ? m.phone : m.email
-        )
-        setSearchResults(filtered)
-        setShowResults(true)
-        setFocusedIndex(-1)
+      // API has max limit of 500, so fetch in batches
+      const PAGE_SIZE = 500
+      let allFetched = []
+      let page = 1
+      let hasMore = true
+      
+      while (hasMore) {
+        const response = await window.electronAPI.contacts.search('', {
+          limit: PAGE_SIZE,
+          page,
+          sortBy: 'name',
+          sortOrder: 'asc'
+        })
+        
+        if (response.success && response.members && response.members.length > 0) {
+          allFetched = [...allFetched, ...response.members]
+          // Check if we got a full page (meaning there might be more)
+          if (response.members.length < PAGE_SIZE) {
+            hasMore = false
+          } else {
+            page++
+          }
+        } else {
+          hasMore = false
+        }
+      }
+      
+      // Filter by type (phone or email) at load time
+      const filtered = allFetched.filter(m => 
+        type === 'phone' ? m.phone : m.email
+      )
+      setAllMembers(filtered)
+      setHasLoaded(true)
+    } catch (error) {
+      console.error('Error loading members:', error)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const loadCommunities = async () => {
+    setIsLoadingCommunities(true)
+    try {
+      const response = await window.electronAPI.contacts.getCommunities()
+      if (response.success && response.communities) {
+        setCommunities(response.communities)
       }
     } catch (error) {
-      console.error('Search error:', error)
+      console.error('Error loading communities:', error)
     } finally {
-      setIsSearching(false)
+      setIsLoadingCommunities(false)
+    }
+  }
+
+  // Client-side filtering, sorting, and pagination
+  const filteredAndSortedMembers = useMemo(() => {
+    let results = [...allMembers]
+    
+    // Apply search filter
+    if (searchTerm) {
+      const term = searchTerm.toLowerCase()
+      results = results.filter(m => 
+        m.name?.toLowerCase().includes(term) ||
+        m.firstName?.toLowerCase().includes(term) ||
+        m.lastName?.toLowerCase().includes(term) ||
+        m.email?.toLowerCase().includes(term) ||
+        m.phone?.includes(term) ||
+        m.community?.toLowerCase().includes(term)
+      )
+    }
+    
+    // Apply letter filter
+    if (activeLetter) {
+      results = results.filter(m => 
+        m.name?.toUpperCase().startsWith(activeLetter) ||
+        m.lastName?.toUpperCase().startsWith(activeLetter)
+      )
+    }
+    
+    // Apply community filter
+    if (selectedCommunity) {
+      results = results.filter(m => m.community === selectedCommunity)
+    }
+    
+    // Apply sorting
+    results.sort((a, b) => {
+      let comparison = 0
+      switch (sortBy) {
+        case 'name':
+          comparison = (a.name || '').localeCompare(b.name || '')
+          break
+        case 'firstName':
+          comparison = (a.firstName || '').localeCompare(b.firstName || '')
+          break
+        case 'lastName':
+          comparison = (a.lastName || '').localeCompare(b.lastName || '')
+          break
+        case 'community':
+          comparison = (a.community || '').localeCompare(b.community || '')
+          break
+        default:
+          comparison = (a.name || '').localeCompare(b.name || '')
+      }
+      return sortOrder === 'desc' ? -comparison : comparison
+    })
+    
+    return results
+  }, [allMembers, searchTerm, activeLetter, selectedCommunity, sortBy, sortOrder])
+
+  // Calculate pagination
+  const totalResults = filteredAndSortedMembers.length
+  const totalPages = Math.ceil(totalResults / ITEMS_PER_PAGE)
+  const searchResults = useMemo(() => {
+    const start = (currentPage - 1) * ITEMS_PER_PAGE
+    return filteredAndSortedMembers.slice(start, start + ITEMS_PER_PAGE)
+  }, [filteredAndSortedMembers, currentPage])
+
+  const handlePageChange = (newPage) => {
+    if (newPage >= 1 && newPage <= totalPages) {
+      setCurrentPage(newPage)
+      setFocusedIndex(-1)
     }
   }
 
@@ -99,8 +208,26 @@ function MemberSearch({ type, selected, onSelect }) {
     onSelect(selected.filter(s => !resultIds.has(s.id)))
   }
 
+  const handleLetterClick = (letter) => {
+    if (activeLetter === letter) {
+      setActiveLetter('')
+    } else {
+      setActiveLetter(letter)
+      setSearchTerm('')
+    }
+  }
+
+  const clearFilters = () => {
+    setSearchTerm('')
+    setSelectedCommunity('')
+    setActiveLetter('')
+    setSortBy('name')
+    setSortOrder('asc')
+    setCurrentPage(1)
+  }
+
   const handleKeyDown = (e) => {
-    if (!showResults || searchResults.length === 0) return
+    if (searchResults.length === 0) return
 
     switch (e.key) {
       case 'ArrowDown':
@@ -122,7 +249,6 @@ function MemberSearch({ type, selected, onSelect }) {
         }
         break
       case 'Escape':
-        setShowResults(false)
         setFocusedIndex(-1)
         inputRef.current?.blur()
         break
@@ -154,193 +280,526 @@ function MemberSearch({ type, selected, onSelect }) {
   const hiddenCount = selectedCount - visibleSelectedCount
   const displayedSelected = showAllSelected ? selected : selected.slice(0, 8)
 
-  // Check how many visible results are selected
   const selectedVisibleCount = searchResults.filter(
     member => selected.some(s => s.id === member.id)
   ).length
 
-  return (
-    <div className="member-search" ref={searchContainerRef}>
-      <div className="search-input-wrapper">
-        <span className="search-icon">🔍</span>
-        <input
-          ref={inputRef}
-          type="text"
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          onFocus={() => searchResults.length > 0 && setShowResults(true)}
-          onKeyDown={handleKeyDown}
-          placeholder={`Search members by name, community, or address...`}
-          className="search-input"
-        />
-        {isSearching && <span className="search-spinner"></span>}
-        {searchTerm && !isSearching && (
-          <button 
-            className="clear-search" 
-            onClick={() => {
-              setSearchTerm('')
-              setSearchResults([])
-              setHasSearched(false)
-              inputRef.current?.focus()
-            }}
-            title="Clear search"
-          >
-            ×
-          </button>
-        )}
+  const hasActiveFilters = searchTerm || selectedCommunity || activeLetter
 
-        {/* Search Results Dropdown - positioned absolute */}
-        {showResults && searchResults.length > 0 && (
-          <div className="search-results-container">
-            <div className="search-results-header">
-              <span className="results-count">
-                {searchResults.length} result{searchResults.length !== 1 ? 's' : ''}
-                {selectedVisibleCount > 0 && ` • ${selectedVisibleCount} selected`}
-              </span>
-              <div className="results-actions" style={{ display: 'flex', gap: '8px' }}>
-                {selectedVisibleCount < searchResults.length && (
-                  <button 
-                    className="results-action-btn"
-                    onClick={handleSelectAllVisible}
-                    title="Select all visible results"
-                    style={{
-                      background: 'rgba(0,217,255,0.2)',
-                      border: '1px solid #00d9ff',
-                      color: '#00d9ff',
-                      padding: '4px 10px',
-                      borderRadius: '4px',
-                      cursor: 'pointer',
-                      fontSize: '12px'
-                    }}
-                  >
-                    Select All
-                  </button>
-                )}
-                {selectedVisibleCount > 0 && (
-                  <button 
-                    className="results-action-btn"
-                    onClick={handleDeselectAllVisible}
-                    title="Deselect all visible results"
-                    style={{
-                      background: 'rgba(0,217,255,0.2)',
-                      border: '1px solid #00d9ff',
-                      color: '#00d9ff',
-                      padding: '4px 10px',
-                      borderRadius: '4px',
-                      cursor: 'pointer',
-                      fontSize: '12px'
-                    }}
-                  >
-                    Deselect All
-                  </button>
-                )}
-              </div>
+  // Compact vertical layout for side panels
+  if (compact) {
+    return (
+      <div className="member-search-compact">
+        {/* Compact Header */}
+        <div className="compact-header">
+          <h4>Select Recipients</h4>
+          <span className="compact-stats">
+            {selectedCount} selected / {totalResults} total
+          </span>
+        </div>
+
+        {/* Compact Search Controls */}
+        <div className="compact-controls">
+          <div className="compact-search">
+            <span className="search-icon">🔍</span>
+            <input
+              ref={inputRef}
+              type="text"
+              value={searchTerm}
+              onChange={(e) => {
+                setSearchTerm(e.target.value)
+                setActiveLetter('')
+              }}
+              onKeyDown={handleKeyDown}
+              placeholder="Search members..."
+              className="search-input"
+            />
+            {isLoading && <span className="search-spinner"></span>}
+            {searchTerm && !isLoading && (
+              <button 
+                className="clear-search" 
+                onClick={() => setSearchTerm('')}
+              >
+                ×
+              </button>
+            )}
+          </div>
+
+          <div className="compact-filters">
+            <select
+              value={selectedCommunity}
+              onChange={(e) => setSelectedCommunity(e.target.value)}
+              className="filter-select compact-select"
+              disabled={isLoadingCommunities}
+            >
+              <option value="">All Communities</option>
+              {communities.map(community => (
+                <option key={community} value={community}>{community}</option>
+              ))}
+            </select>
+            
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+              className="filter-select compact-select"
+            >
+              <option value="name">Name</option>
+              <option value="firstName">First</option>
+              <option value="lastName">Last</option>
+              <option value="community">Community</option>
+            </select>
+            
+            <button
+              className={`sort-order-btn compact ${sortOrder === 'asc' ? 'asc' : 'desc'}`}
+              onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
+              title={sortOrder === 'asc' ? 'A-Z' : 'Z-A'}
+            >
+              {sortOrder === 'asc' ? '↑' : '↓'}
+            </button>
+          </div>
+
+          {/* Compact Alphabet Filter */}
+          <div className="compact-alphabet">
+            {ALPHABET.map(letter => (
+              <button
+                key={letter}
+                className={`letter-btn compact ${activeLetter === letter ? 'active' : ''}`}
+                onClick={() => handleLetterClick(letter)}
+              >
+                {letter}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Compact Actions */}
+        <div className="compact-actions">
+          {searchResults.length > 0 && (
+            <>
+              <button 
+                className="action-btn small"
+                onClick={handleSelectAllVisible}
+                disabled={selectedVisibleCount === searchResults.length}
+              >
+                Select All
+              </button>
+              <button 
+                className="action-btn small"
+                onClick={handleDeselectAllVisible}
+                disabled={selectedVisibleCount === 0}
+              >
+                Deselect All
+              </button>
+            </>
+          )}
+          {hasActiveFilters && (
+            <button className="action-btn small clear" onClick={clearFilters}>
+              Clear Filters
+            </button>
+          )}
+        </div>
+
+        {/* Compact Results List */}
+        <div className="compact-results" ref={resultsRef}>
+          {isLoading ? (
+            <div className="loading-state compact">
+              <div className="loading-spinner"></div>
+              <span>Loading members...</span>
             </div>
-          <div 
-            className="search-results" 
-            ref={resultsRef}
-            style={{
-              maxHeight: '280px',
-              overflowY: 'auto',
-              background: '#1e1e3a'
-            }}
-          >
-            {searchResults.map((member, index) => {
+          ) : searchResults.length === 0 && hasLoaded ? (
+            <div className="empty-state compact">
+              <span>No members found</span>
+            </div>
+          ) : (
+            searchResults.map((member, index) => {
               const isSelected = selected.some(s => s.id === member.id)
               const isFocused = index === focusedIndex
               return (
                 <div 
                   key={member.id}
-                  className={`search-result-item ${isSelected ? 'selected' : ''} ${isFocused ? 'focused' : ''}`}
+                  className={`member-item compact ${isSelected ? 'selected' : ''} ${isFocused ? 'focused' : ''}`}
                   onClick={() => handleSelect(member)}
                   onMouseEnter={() => setFocusedIndex(index)}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '12px',
-                    padding: '12px 16px',
-                    cursor: 'pointer',
-                    background: isSelected ? '#1a3040' : isFocused ? '#2a2a4a' : '#1e1e3a',
-                    borderBottom: '1px solid rgba(255,255,255,0.1)'
-                  }}
                 >
                   <div 
-                    className="member-avatar" 
-                    style={{ 
-                      backgroundColor: getAvatarColor(member.name),
-                      width: '36px',
-                      height: '36px',
-                      borderRadius: '50%',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontSize: '12px',
-                      fontWeight: 700,
-                      color: '#111',
-                      flexShrink: 0
-                    }}
+                    className="member-avatar small" 
+                    style={{ backgroundColor: getAvatarColor(member.name) }}
                   >
                     {getInitials(member.name)}
                   </div>
-                  <div className="member-info" style={{ flex: 1, minWidth: 0 }}>
-                    <div className="member-name-row" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span style={{ color: '#ffffff', fontWeight: 600, fontSize: '15px' }}>{member.name}</span>
-                    </div>
-                    <span style={{ color: '#b0b0d0', fontSize: '13px' }}>
+                  <div className="member-details compact">
+                    <span className="member-name">{member.name}</span>
+                    <span className="member-contact">
                       {type === 'phone' ? member.phone : member.email}
                     </span>
-                    {member.community && (
-                      <span style={{ color: '#8888aa', fontSize: '12px', fontStyle: 'italic', display: 'block' }}>
-                        {member.community}
-                      </span>
-                    )}
                   </div>
-                  <span style={{ 
-                    fontSize: '18px', 
-                    fontWeight: 'bold', 
-                    color: isSelected ? '#00ff88' : 'rgba(255,255,255,0.5)'
-                  }}>
+                  <span className={`member-check compact ${isSelected ? 'checked' : ''}`}>
                     {isSelected ? '✓' : '+'}
                   </span>
                 </div>
               )
-            })}
-          </div>
-          <div 
-            className="search-results-footer"
-            style={{
-              padding: '8px 16px',
-              background: 'rgba(255,255,255,0.03)',
-              borderTop: '1px solid rgba(255,255,255,0.1)'
-            }}
-          >
-            <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.5)', fontFamily: 'monospace' }}>
-              ↑↓ Navigate • Enter Select • Esc Close
-            </span>
-          </div>
+            })
+          )}
         </div>
+
+        {/* Compact Pagination */}
+        {totalPages > 1 && (
+          <div className="pagination compact">
+            <button
+              className="page-btn"
+              onClick={() => handlePageChange(currentPage - 1)}
+              disabled={currentPage === 1}
+            >
+              ‹
+            </button>
+            <span className="page-info compact">
+              {currentPage}/{totalPages}
+            </span>
+            <button
+              className="page-btn"
+              onClick={() => handlePageChange(currentPage + 1)}
+              disabled={currentPage === totalPages}
+            >
+              ›
+            </button>
+          </div>
+        )}
+
+        {/* Compact Selected Tags */}
+        {selected.length > 0 && (
+          <div className="compact-selected">
+            <div className="compact-selected-header">
+              <span>{selectedCount} selected</span>
+              <button className="clear-all-btn small" onClick={handleClearAll}>
+                Clear
+              </button>
+            </div>
+            <div className="compact-selected-tags">
+              {(showAllSelected ? selected : selected.slice(0, 6)).map((member) => (
+                <span key={member.id} className="selected-tag compact" title={member.name}>
+                  <span className="tag-name">{member.name.split(' ')[0]}</span>
+                  <button onClick={(e) => { e.stopPropagation(); handleRemove(member); }} className="remove-tag">×</button>
+                </span>
+              ))}
+              {selectedCount > 6 && !showAllSelected && (
+                <button className="show-more-btn compact" onClick={() => setShowAllSelected(true)}>
+                  +{selectedCount - 6}
+                </button>
+              )}
+              {showAllSelected && selectedCount > 6 && (
+                <button className="show-less-btn compact" onClick={() => setShowAllSelected(false)}>
+                  less
+                </button>
+              )}
+            </div>
+          </div>
         )}
       </div>
+    )
+  }
 
-      {showResults && hasSearched && searchResults.length === 0 && !isSearching && searchTerm.length >= 2 && (
-        <div className="search-no-results">
-          <span className="no-results-icon">🔍</span>
-          <span className="no-results-text">No members found for "{searchTerm}"</span>
-          <span className="no-results-hint">Try a different name, community, or address</span>
+  // Full layout (original)
+
+  return (
+    <div className="member-search-enhanced">
+      {/* Main Container with Sidebar Layout */}
+      <div className={`search-layout ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
+        
+        {/* Sidebar - Search Controls */}
+        <div className="search-sidebar">
+          <div className="sidebar-header">
+            <h3>Find Members</h3>
+            <button 
+              className="sidebar-toggle"
+              onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+              title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            >
+              {sidebarCollapsed ? '→' : '←'}
+            </button>
+          </div>
+
+          {!sidebarCollapsed && (
+            <>
+              {/* Search Input */}
+              <div className="search-section">
+                <label>Search</label>
+                <div className="search-input-group">
+                  <span className="search-icon">🔍</span>
+                  <input
+                    ref={inputRef}
+                    type="text"
+                    value={searchTerm}
+                    onChange={(e) => {
+                      setSearchTerm(e.target.value)
+                      setActiveLetter('')
+                    }}
+                    onKeyDown={handleKeyDown}
+                    placeholder="Name, address, community..."
+                    className="search-input"
+                  />
+                  {isLoading && <span className="search-spinner"></span>}
+                  {searchTerm && !isLoading && (
+                    <button 
+                      className="clear-search" 
+                      onClick={() => setSearchTerm('')}
+                      title="Clear search"
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Alphabet Filter */}
+              <div className="search-section">
+                <label>Quick Filter by Letter</label>
+                <div className="alphabet-filter">
+                  {ALPHABET.map(letter => (
+                    <button
+                      key={letter}
+                      className={`letter-btn ${activeLetter === letter ? 'active' : ''}`}
+                      onClick={() => handleLetterClick(letter)}
+                    >
+                      {letter}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Community Filter */}
+              <div className="search-section">
+                <label>Community</label>
+                <select
+                  value={selectedCommunity}
+                  onChange={(e) => setSelectedCommunity(e.target.value)}
+                  className="filter-select"
+                  disabled={isLoadingCommunities}
+                >
+                  <option value="">All Communities</option>
+                  {communities.map(community => (
+                    <option key={community} value={community}>{community}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Sort Options */}
+              <div className="search-section">
+                <label>Sort By</label>
+                <div className="sort-controls">
+                  <select
+                    value={sortBy}
+                    onChange={(e) => setSortBy(e.target.value)}
+                    className="filter-select"
+                  >
+                    <option value="name">Full Name</option>
+                    <option value="firstName">First Name</option>
+                    <option value="lastName">Last Name</option>
+                    <option value="community">Community</option>
+                  </select>
+                  <button
+                    className={`sort-order-btn ${sortOrder === 'asc' ? 'asc' : 'desc'}`}
+                    onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
+                    title={sortOrder === 'asc' ? 'Ascending (A-Z)' : 'Descending (Z-A)'}
+                  >
+                    {sortOrder === 'asc' ? '↑ A-Z' : '↓ Z-A'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Clear Filters */}
+              {hasActiveFilters && (
+                <button className="clear-filters-btn" onClick={clearFilters}>
+                  Clear All Filters
+                </button>
+              )}
+
+              {/* Stats */}
+              <div className="search-stats">
+                <div className="stat-item">
+                  <span className="stat-value">{totalResults}</span>
+                  <span className="stat-label">Total Members</span>
+                </div>
+                <div className="stat-item">
+                  <span className="stat-value">{selectedCount}</span>
+                  <span className="stat-label">Selected</span>
+                </div>
+              </div>
+            </>
+          )}
         </div>
-      )}
 
+        {/* Main Content - Results */}
+        <div className="search-results-panel">
+          {/* Results Header */}
+          <div className="results-header">
+            <div className="results-info">
+              <span className="results-title">
+                {hasActiveFilters ? 'Search Results' : 'All Members'}
+              </span>
+              <span className="results-count">
+                Showing {searchResults.length} of {totalResults}
+                {selectedVisibleCount > 0 && ` • ${selectedVisibleCount} selected on this page`}
+              </span>
+            </div>
+            <div className="results-actions">
+              {selectedVisibleCount < searchResults.length && searchResults.length > 0 && (
+                <button 
+                  className="action-btn select-all"
+                  onClick={handleSelectAllVisible}
+                >
+                  Select All on Page
+                </button>
+              )}
+              {selectedVisibleCount > 0 && (
+                <button 
+                  className="action-btn deselect-all"
+                  onClick={handleDeselectAllVisible}
+                >
+                  Deselect All on Page
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Results List */}
+          <div className="results-list" ref={resultsRef}>
+            {isLoading ? (
+              <div className="loading-state">
+                <div className="loading-spinner"></div>
+                <span>Loading members...</span>
+              </div>
+            ) : searchResults.length === 0 && hasLoaded ? (
+              <div className="empty-state">
+                <span className="empty-icon">🔍</span>
+                <span className="empty-title">No members found</span>
+                <span className="empty-hint">
+                  {hasActiveFilters 
+                    ? 'Try adjusting your search or filters' 
+                    : 'No activated members match your criteria'}
+                </span>
+                {hasActiveFilters && (
+                  <button className="clear-filters-btn small" onClick={clearFilters}>
+                    Clear Filters
+                  </button>
+                )}
+              </div>
+            ) : (
+              searchResults.map((member, index) => {
+                const isSelected = selected.some(s => s.id === member.id)
+                const isFocused = index === focusedIndex
+                return (
+                  <div 
+                    key={member.id}
+                    className={`member-item ${isSelected ? 'selected' : ''} ${isFocused ? 'focused' : ''}`}
+                    onClick={() => handleSelect(member)}
+                    onMouseEnter={() => setFocusedIndex(index)}
+                  >
+                    <div 
+                      className="member-avatar" 
+                      style={{ backgroundColor: getAvatarColor(member.name) }}
+                    >
+                      {getInitials(member.name)}
+                    </div>
+                    <div className="member-details">
+                      <span className="member-name">{member.name}</span>
+                      <span className="member-contact">
+                        {type === 'phone' ? member.phone : member.email}
+                      </span>
+                      {member.community && (
+                        <span className="member-community">{member.community}</span>
+                      )}
+                    </div>
+                    <span className={`member-check ${isSelected ? 'checked' : ''}`}>
+                      {isSelected ? '✓' : '+'}
+                    </span>
+                  </div>
+                )
+              })
+            )}
+          </div>
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="pagination">
+              <button
+                className="page-btn"
+                onClick={() => handlePageChange(1)}
+                disabled={currentPage === 1}
+                title="First page"
+              >
+                ««
+              </button>
+              <button
+                className="page-btn"
+                onClick={() => handlePageChange(currentPage - 1)}
+                disabled={currentPage === 1}
+                title="Previous page"
+              >
+                ‹
+              </button>
+              
+              <div className="page-numbers">
+                {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                  let pageNum
+                  if (totalPages <= 5) {
+                    pageNum = i + 1
+                  } else if (currentPage <= 3) {
+                    pageNum = i + 1
+                  } else if (currentPage >= totalPages - 2) {
+                    pageNum = totalPages - 4 + i
+                  } else {
+                    pageNum = currentPage - 2 + i
+                  }
+                  
+                  return (
+                    <button
+                      key={pageNum}
+                      className={`page-num ${currentPage === pageNum ? 'active' : ''}`}
+                      onClick={() => handlePageChange(pageNum)}
+                    >
+                      {pageNum}
+                    </button>
+                  )
+                })}
+              </div>
+              
+              <button
+                className="page-btn"
+                onClick={() => handlePageChange(currentPage + 1)}
+                disabled={currentPage === totalPages}
+                title="Next page"
+              >
+                ›
+              </button>
+              <button
+                className="page-btn"
+                onClick={() => handlePageChange(totalPages)}
+                disabled={currentPage === totalPages}
+                title="Last page"
+              >
+                »»
+              </button>
+              
+              <span className="page-info">
+                Page {currentPage} of {totalPages}
+              </span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Selected Recipients */}
       {selected.length > 0 && (
-        <div className="selected-members-container">
-          <div className="selected-members-header">
-            <span className="selected-count">
+        <div className="selected-recipients">
+          <div className="selected-header">
+            <span className="selected-title">
               {selectedCount} recipient{selectedCount !== 1 ? 's' : ''} selected
             </span>
             <button className="clear-all-btn" onClick={handleClearAll}>
               Clear All
             </button>
           </div>
-          <div className="selected-members">
+          <div className="selected-tags">
             {displayedSelected.map((member) => (
               <span key={member.id} className="selected-tag" title={type === 'phone' ? member.phone : member.email}>
                 <span 
@@ -350,7 +809,7 @@ function MemberSearch({ type, selected, onSelect }) {
                   {getInitials(member.name)}
                 </span>
                 <span className="tag-name">{member.name}</span>
-                <button onClick={() => handleRemove(member)} className="remove-tag" title="Remove">×</button>
+                <button onClick={(e) => { e.stopPropagation(); handleRemove(member); }} className="remove-tag" title="Remove">×</button>
               </span>
             ))}
             {!showAllSelected && hiddenCount > 0 && (

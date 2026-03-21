@@ -1,9 +1,9 @@
 import { app, ipcMain, BrowserWindow } from "electron";
 import path, { join } from "path";
 import { fileURLToPath } from "url";
+import { existsSync, readFileSync } from "fs";
 import { config } from "dotenv";
 import Store from "electron-store";
-import { existsSync, readFileSync } from "fs";
 import { mkdir, writeFile } from "fs/promises";
 import sharp from "sharp";
 import __cjs_mod__ from "node:module";
@@ -594,41 +594,100 @@ async function getEmailHistory(userId, limit = 50) {
     return { success: false, error: error.message };
   }
 }
-async function searchMembers(searchTerm, limit = 50) {
+async function searchMembers(searchTerm, options = {}) {
   try {
+    const opts = typeof options === "number" ? { limit: options } : options;
+    const {
+      limit = 25,
+      page = 1,
+      sortBy = "name",
+      sortOrder = "asc",
+      community = ""
+    } = opts;
     const params = new URLSearchParams({
-      query: searchTerm,
+      query: searchTerm || "",
       limit: limit.toString(),
+      page: page.toString(),
+      sortBy,
+      sortOrder,
       activated: "true",
       fields: "both"
     });
+    if (community) {
+      params.append("community", community);
+    }
     const result = await apiRequest(`/api/sync/contacts?${params}`);
     if (result.success && result.data?.contacts) {
+      const contacts = result.data.contacts.map((contact) => ({
+        id: contact.memberId,
+        memberId: contact.memberId,
+        name: contact.name || `${contact.firstName} ${contact.lastName}`,
+        firstName: contact.firstName,
+        lastName: contact.lastName,
+        phone: contact.phone,
+        email: contact.email,
+        community: contact.community,
+        address: contact.address,
+        status: contact.status
+      }));
+      const sortedContacts = sortContacts(contacts, sortBy, sortOrder);
       return {
         success: true,
-        members: result.data.contacts.map((contact) => ({
-          id: contact.memberId,
-          memberId: contact.memberId,
-          name: contact.name || `${contact.firstName} ${contact.lastName}`,
-          firstName: contact.firstName,
-          lastName: contact.lastName,
-          phone: contact.phone,
-          email: contact.email,
-          community: contact.community,
-          address: contact.address,
-          status: contact.status
-        })),
-        count: result.data.count,
-        hasMore: result.data.pagination?.hasMore || false
+        members: sortedContacts,
+        count: result.data.count || contacts.length,
+        totalCount: result.data.totalCount || result.data.count || contacts.length,
+        page: result.data.pagination?.page || page,
+        totalPages: result.data.pagination?.totalPages || Math.ceil((result.data.totalCount || contacts.length) / limit),
+        hasMore: result.data.pagination?.hasMore || false,
+        communities: result.data.communities || []
       };
     }
-    return { success: true, members: [], count: 0 };
+    return { success: true, members: [], count: 0, totalCount: 0, page: 1, totalPages: 1, hasMore: false };
   } catch (error) {
     console.error("Search members error:", error);
-    return { success: false, error: error.message, members: [] };
+    return { success: false, error: error.message, members: [], count: 0, totalCount: 0 };
   }
 }
-async function getAllPhoneNumbers(limit = 1e3) {
+function sortContacts(contacts, sortBy, sortOrder) {
+  return [...contacts].sort((a, b) => {
+    let comparison = 0;
+    switch (sortBy) {
+      case "name":
+        comparison = (a.name || "").localeCompare(b.name || "");
+        break;
+      case "firstName":
+        comparison = (a.firstName || "").localeCompare(b.firstName || "");
+        break;
+      case "lastName":
+        comparison = (a.lastName || "").localeCompare(b.lastName || "");
+        break;
+      case "community":
+        comparison = (a.community || "").localeCompare(b.community || "");
+        break;
+      default:
+        comparison = (a.name || "").localeCompare(b.name || "");
+    }
+    return sortOrder === "desc" ? -comparison : comparison;
+  });
+}
+async function getCommunities() {
+  try {
+    const result = await apiRequest("/api/sync/contacts/communities");
+    if (result.success && result.data?.communities) {
+      return { success: true, communities: result.data.communities };
+    }
+    const contactsResult = await searchMembers("", { limit: 500 });
+    if (contactsResult.success) {
+      const communities = [...new Set(contactsResult.members.map((m) => m.community).filter(Boolean))].sort();
+      return { success: true, communities };
+    }
+    return { success: true, communities: [] };
+  } catch (error) {
+    console.error("Get communities error:", error);
+    return { success: false, communities: [] };
+  }
+}
+async function getAllPhoneNumbers(limit = 500) {
   try {
     const params = new URLSearchParams({
       limit: limit.toString(),
@@ -651,7 +710,7 @@ async function getAllPhoneNumbers(limit = 1e3) {
     return { success: false, error: error.message, members: [] };
   }
 }
-async function getAllEmails(limit = 1e3) {
+async function getAllEmails(limit = 500) {
   try {
     const params = new URLSearchParams({
       limit: limit.toString(),
@@ -683,6 +742,53 @@ async function testConnection() {
     return { success: false, error: result.error || "Connection failed" };
   } catch (error) {
     return { success: false, error: error.message };
+  }
+}
+const MEMBERS_WITH_FNAUTH = [
+  "cmkujg7nr0032xw2ex8durs6b",
+  "cmkujg7ji001axw2e88u3ytrj",
+  "cmkujg8p100jlxw2eeigk8p0w",
+  "cmkujgcaw02f8xw2exkvr8c4c",
+  "cmkujg7wi006uxw2eb0gkj8lh",
+  "cmkujga0e01aaxw2ecri575us",
+  "cmkujg7gr000gxw2ez92xh4sk"
+];
+async function getAffectedMembers() {
+  try {
+    const params = new URLSearchParams({
+      limit: "500",
+      activated: "true",
+      fields: "email"
+    });
+    const result = await apiRequest(`/api/sync/contacts?${params}`);
+    if (result.success && result.data?.contacts) {
+      const affectedMembers = result.data.contacts.filter((c) => c.email).filter((c) => !MEMBERS_WITH_FNAUTH.includes(c.memberId)).map((contact) => ({
+        id: contact.memberId,
+        memberId: contact.memberId,
+        name: contact.name || `${contact.firstName} ${contact.lastName}`,
+        firstName: contact.firstName,
+        lastName: contact.lastName,
+        email: contact.email,
+        phone: contact.phone,
+        community: contact.community
+      }));
+      return {
+        success: true,
+        members: affectedMembers,
+        count: affectedMembers.length,
+        totalProfiles: result.data.contacts.filter((c) => c.email).length,
+        excludedCount: MEMBERS_WITH_FNAUTH.length,
+        message: MEMBERS_WITH_FNAUTH.length > 0 ? `Found ${affectedMembers.length} affected members (excluded ${MEMBERS_WITH_FNAUTH.length} with fnauth)` : `Found ${affectedMembers.length} members. NOTE: Add fnauth member IDs to MEMBERS_WITH_FNAUTH array to filter properly.`
+      };
+    }
+    return {
+      success: false,
+      error: result.error || "Failed to fetch contacts",
+      members: []
+    };
+  } catch (error) {
+    console.error("Get affected members error:", error);
+    return { success: false, error: error.message, members: [] };
   }
 }
 function createMultipartFormData(fields, file) {
@@ -1706,7 +1812,21 @@ async function validateAndOptimizePoster(base64Data) {
 }
 const __filename$1 = fileURLToPath(import.meta.url);
 const __dirname$1 = path.dirname(__filename$1);
-config({ path: path.resolve(__dirname$1, "../../.env") });
+const envPaths = [
+  path.join(process.resourcesPath || "", ".env"),
+  // Production: resources folder
+  path.resolve(__dirname$1, "../../.env"),
+  // Dev: project root from out/main
+  path.resolve(__dirname$1, "../../../.env")
+  // Alt: deeper nesting
+];
+for (const envPath of envPaths) {
+  if (existsSync(envPath)) {
+    config({ path: envPath });
+    console.log("Loaded .env from:", envPath);
+    break;
+  }
+}
 function createWindow() {
   const mainWindow = new BrowserWindow({
     width: 1200,
@@ -1758,8 +1878,9 @@ ipcMain.handle("email:send", async (event, { subject, message, recipients, attac
 ipcMain.handle("email:getHistory", async (event, { userId, limit }) => {
   return await getEmailHistory(userId, limit);
 });
-ipcMain.handle("contacts:search", async (event, { searchTerm, limit }) => {
-  return await searchMembers(searchTerm, limit);
+ipcMain.handle("contacts:search", async (event, { searchTerm, limit, options }) => {
+  const searchOptions = options || (limit ? { limit } : {});
+  return await searchMembers(searchTerm, searchOptions);
 });
 ipcMain.handle("contacts:getAllPhones", async (event, { limit }) => {
   return await getAllPhoneNumbers(limit);
@@ -1767,8 +1888,14 @@ ipcMain.handle("contacts:getAllPhones", async (event, { limit }) => {
 ipcMain.handle("contacts:getAllEmails", async (event, { limit }) => {
   return await getAllEmails(limit);
 });
+ipcMain.handle("contacts:getCommunities", async () => {
+  return await getCommunities();
+});
 ipcMain.handle("contacts:testConnection", async () => {
   return await testConnection();
+});
+ipcMain.handle("contacts:getAffectedMembers", async () => {
+  return await getAffectedMembers();
 });
 ipcMain.handle("bulletin:create", async (event, data) => {
   return await createBulletin(data);

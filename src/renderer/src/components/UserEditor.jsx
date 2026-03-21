@@ -5,16 +5,52 @@ const ROLES = [
   { value: 'STAFF', label: 'Staff' },
   { value: 'STAFF_ADMIN', label: 'Staff Admin' },
   { value: 'ADMIN', label: 'Administrator' },
-  { value: 'CHIEF_COUNCIL', label: 'Chief & Council' }
+  { value: 'COUNCIL', label: 'Council' }
 ]
 
 const DEPARTMENTS = [
-  { value: 'BAND_OFFICE', label: 'Band Office' },
-  { value: 'J_W_HEALTH_CENTER', label: 'JW Health Center' },
+  // Land & Treaty
+  { value: 'TREATY_LAND_ENTITLEMENT', label: 'Treaty Land Entitlement' },
+  { value: 'ADVERSE_AFFECTS', label: 'Adverse Affects' },
+  { value: 'TRSC', label: 'TRSC' },
+  // Cultural & Spiritual
+  { value: 'CHURCH', label: 'Church' },
+  { value: 'TRADITIONAL_LIFESTYLE', label: 'Traditional Lifestyle' },
+  // Education
+  { value: 'EDUCATION_AUTHORITY', label: 'Education Authority' },
   { value: 'CSCMEC', label: 'CSCMEC' },
-  { value: 'COUNCIL', label: 'Council' },
-  { value: 'RECREATION', label: 'Recreation' },
-  { value: 'UTILITIES', label: 'Utilities' }
+  { value: 'TRADITIONAL_KNOWLEDGE', label: 'Traditional Knowledge' },
+  { value: 'ADULT_ED', label: 'Adult Education' },
+  // Employment
+  { value: 'ISETS_TRAINING_EMPLOYMENT', label: 'ISETS Training & Employment' },
+  { value: 'ON_GOING_JOBS_MB_HYDRO', label: 'On-Going Jobs MB Hydro' },
+  // Health & Family
+  { value: 'TCN_HEALTH', label: 'TCN Health' },
+  { value: 'TCN_PREVENTION', label: 'TCN Prevention' },
+  { value: 'JORDANS_PRINCIPLE', label: "Jordan's Principle" },
+  { value: 'WAWATAY', label: 'Wawatay' },
+  { value: 'KEEKINOW', label: 'Keekinow' },
+  { value: 'HEADSTART', label: 'Headstart' },
+  // Public Works
+  { value: 'HOUSING', label: 'Housing' },
+  { value: 'PUBLIC_UTILITIES', label: 'Public Utilities' },
+  { value: 'FIRE_DEPARTMENT', label: 'Fire Department' },
+  { value: 'IRON_NORTH', label: 'Iron North' },
+  { value: 'WATER_TREATMENT_PLANT', label: 'Water Treatment Plant' },
+  { value: 'NAT_RESOURCES_HELI_PAD', label: 'Natural Resources (Helicopter Pad)' },
+  { value: 'IT_COMMUNICATIONS', label: 'IT & Communications' },
+  { value: 'BAND_HALL', label: 'Band Hall' },
+  // Recreation
+  { value: 'TCN_RECREATION', label: 'TCN Recreation' },
+  { value: 'TCN_GAMING', label: 'TCN Gaming' },
+  { value: 'ARENA', label: 'Arena' },
+  // Community Admin
+  { value: 'PUBLIC_SAFETY_POLICE', label: 'Public Safety & Police' },
+  { value: 'SOCIAL_WELFARE', label: 'Social Welfare' },
+  { value: 'JUSTICE_PROGRAM', label: 'Justice Program' },
+  { value: 'FINANCE', label: 'Finance' },
+  { value: 'TCN_TRUST', label: 'TCN Trust' },
+  { value: 'BAND_OFFICE', label: 'Band Office' }
 ]
 
 function UserEditor({ currentUser }) {

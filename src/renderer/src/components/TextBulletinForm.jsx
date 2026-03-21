@@ -28,13 +28,18 @@ const QUILL_FORMATS = [
 ]
 
 const CATEGORIES = [
-  { value: 'CHIEFNCOUNCIL', label: 'Chief & Council' },
-  { value: 'HEALTH', label: 'Health' },
+  { value: 'CHIEF_COUNCIL', label: 'Chief & Council' },
+  { value: 'COMMUNITY_EVENTS', label: 'Community Events' },
+  { value: 'ECONOMIC_DEVELPMENT', label: 'Economic Development' },
+  { value: 'YOUTH', label: 'Youth' },
+  { value: 'LAND_TREATY', label: 'Land & Treaty' },
+  { value: 'CULTURAL_SPIRITUAL', label: 'Cultural & Spiritual' },
   { value: 'EDUCATION', label: 'Education' },
-  { value: 'RECREATION', label: 'Recreation' },
   { value: 'EMPLOYMENT', label: 'Employment' },
-  { value: 'PROGRAM_EVENTS', label: 'Programs & Events' },
-  { value: 'ANNOUNCEMENTS', label: 'Announcements' }
+  { value: 'HEALTH_FAMILY', label: 'Health & Family' },
+  { value: 'PUBLIC_WORKS', label: 'Public Works' },
+  { value: 'RECREATION', label: 'Recreation' },
+  { value: 'COMMUNITY_ADMIN', label: 'Community Admin' }
 ]
 
 function TextBulletinForm({ user, onBack }) {

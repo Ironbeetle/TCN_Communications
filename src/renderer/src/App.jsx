@@ -49,7 +49,7 @@ function App() {
   }
 
   // Role-based routing
-  const isAdmin = user.role === 'ADMIN' || user.role === 'CHIEF_COUNCIL'
+  const isAdmin = user.role === 'ADMIN' || user.role === 'COUNCIL'
   const isStaffAdmin = user.role === 'STAFF_ADMIN'
   
   // Admin gets staff admin dashboard with full access (no department filter)

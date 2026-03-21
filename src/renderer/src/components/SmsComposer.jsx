@@ -36,17 +36,6 @@ function SmsComposer({ user }) {
     }
   }
 
-  const handleSelectAll = async () => {
-    try {
-      const response = await window.electronAPI.contacts.getAllPhones()
-      if (response.success) {
-        setRecipients(response.members)
-      }
-    } catch (error) {
-      console.error('Failed to load contacts:', error)
-    }
-  }
-
   return (
     <div className="composer">
       <div className="composer-header">
@@ -54,52 +43,60 @@ function SmsComposer({ user }) {
         <p>Send text messages to community members</p>
       </div>
 
-      <div className="composer-body">
-        <div className="composer-section">
-          <label>Recipients</label>
+      {/* Split Layout */}
+      <div className="composer-split-layout">
+        {/* Left Panel - Message Composer (65%) */}
+        <div className="composer-left-panel">
+          {/* Recipient Count Display */}
+          {recipients.length > 0 && (
+            <div className="recipient-display">
+              <span className="count-badge">{recipients.length}</span>
+              <span>recipient{recipients.length !== 1 ? 's' : ''} selected</span>
+            </div>
+          )}
+
+          {/* Message */}
+          <div className="composer-section">
+            <label htmlFor="message">Message</label>
+            <textarea
+              id="message"
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              placeholder="Type your message here..."
+              rows={8}
+            />
+            <div className="char-count">
+              {charCount} characters • {segmentCount} segment{segmentCount !== 1 ? 's' : ''}
+            </div>
+          </div>
+
+          {/* Result Message */}
+          {result && (
+            <div className={`result-message ${result.success ? 'success' : 'error'}`}>
+              {result.message}
+            </div>
+          )}
+
+          {/* Send Button */}
+          <div className="form-actions">
+            <button 
+              className="send-button"
+              onClick={handleSend}
+              disabled={isSending || !message.trim() || recipients.length === 0}
+            >
+              {isSending ? 'Sending...' : `Send to ${recipients.length} recipient${recipients.length !== 1 ? 's' : ''}`}
+            </button>
+          </div>
+        </div>
+
+        {/* Right Panel - Member Search (35%) */}
+        <div className="composer-right-panel">
           <MemberSearch 
             type="phone"
             selected={recipients}
             onSelect={setRecipients}
+            compact={true}
           />
-          <div className="recipient-actions">
-            <button type="button" className="link-button" onClick={handleSelectAll}>
-              Select All Members
-            </button>
-            {recipients.length > 0 && (
-              <span className="recipient-count">{recipients.length} selected</span>
-            )}
-          </div>
-        </div>
-
-        <div className="composer-section">
-          <label htmlFor="message">Message</label>
-          <textarea
-            id="message"
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            placeholder="Type your message here..."
-            rows={6}
-          />
-          <div className="char-count">
-            {charCount} characters • {segmentCount} segment{segmentCount !== 1 ? 's' : ''}
-          </div>
-        </div>
-
-        {result && (
-          <div className={`result-message ${result.success ? 'success' : 'error'}`}>
-            {result.message}
-          </div>
-        )}
-
-        <div className="composer-actions">
-          <button 
-            className="send-button"
-            onClick={handleSend}
-            disabled={isSending || !message.trim() || recipients.length === 0}
-          >
-            {isSending ? 'Sending...' : `Send to ${recipients.length} recipient${recipients.length !== 1 ? 's' : ''}`}
-          </button>
         </div>
       </div>
     </div>
