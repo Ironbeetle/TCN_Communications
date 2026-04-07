@@ -1,5 +1,4 @@
 import { useState, lazy, Suspense } from 'react'
-import './Composer.css'
 
 // Lazy load bulletin forms (TextBulletinForm includes heavy React-Quill editor)
 const PosterBulletinForm = lazy(() => import('./PosterBulletinForm'))

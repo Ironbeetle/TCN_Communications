@@ -1,5 +1,4 @@
 import { useState, useRef } from 'react'
-import './Composer.css'
 
 const CATEGORIES = [
   { value: 'CHIEF_COUNCIL', label: 'Chief & Council' },

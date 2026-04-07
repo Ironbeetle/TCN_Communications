@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react'
-import './Forms.css'
 
 const FIELD_TYPES = [
   { value: 'TEXT', label: 'Text Input' },
@@ -224,7 +223,7 @@ function FormBuilder({ form, user, onSave, onCancel }) {
               <option key={opt.value} value={opt.value}>{opt.label}</option>
             ))}
           </select>
-          <small style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.75rem', marginTop: '4px', display: 'block' }}>
+          <small style={{ color: '#A98B76', fontSize: '0.75rem', marginTop: '4px', display: 'block' }}>
             Select the department this form belongs to
           </small>
         </div>
@@ -282,7 +281,7 @@ function FormBuilder({ form, user, onSave, onCancel }) {
             />
             Allow resubmissions (for recurring programs)
           </label>
-          <small style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.75rem', marginTop: '4px', display: 'block' }}>
+          <small style={{ color: '#A98B76', fontSize: '0.75rem', marginTop: '4px', display: 'block' }}>
             Enable this for forms that members may need to submit multiple times (e.g., monthly programs)
           </small>
         </div>
@@ -296,7 +295,7 @@ function FormBuilder({ form, user, onSave, onCancel }) {
               onChange={(e) => setResubmitMessage(e.target.value)}
               placeholder="e.g., Submit again for the next session"
             />
-            <small style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.75rem', marginTop: '4px', display: 'block' }}>
+            <small style={{ color: '#A98B76', fontSize: '0.75rem', marginTop: '4px', display: 'block' }}>
               Custom message shown to members who have already submitted
             </small>
           </div>
@@ -388,7 +387,7 @@ function FormBuilder({ form, user, onSave, onCancel }) {
                       onChange={(e) => updateField(index, 'optionsText', e.target.value)}
                       placeholder="Options (one per line, use Enter to separate)"
                     />
-                    <small style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.75rem' }}>
+                    <small style={{ color: '#A98B76', fontSize: '0.75rem' }}>
                       Separate options with commas or new lines
                     </small>
                   </div>

@@ -1,6 +1,4 @@
 import { useState, useEffect, lazy, Suspense } from 'react'
-import './Dashboard.css'
-import './AdminDashboard.css'
 
 // Lazy load heavy components
 const Communications = lazy(() => import('./Communications'))

@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react'
-import './AdminDashboard.css'
 
 const ROLES = [
   { value: 'STAFF', label: 'Staff' },
+  { value: 'DEPARTMENT_ADMIN', label: 'Department Admin' },
   { value: 'STAFF_ADMIN', label: 'Staff Admin' },
+  { value: 'FINANCE', label: 'Finance' },
   { value: 'ADMIN', label: 'Administrator' },
   { value: 'COUNCIL', label: 'Council' }
 ]
@@ -160,7 +161,10 @@ function UserEditor({ currentUser }) {
   const getRoleBadgeClass = (role) => {
     switch (role) {
       case 'ADMIN': return 'admin'
+      case 'COUNCIL': return 'council'
       case 'STAFF_ADMIN': return 'staff-admin'
+      case 'FINANCE': return 'finance'
+      case 'DEPARTMENT_ADMIN': return 'dept-admin'
       default: return 'staff'
     }
   }

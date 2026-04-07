@@ -4,7 +4,6 @@ import EmailComposer from './EmailComposer'
 import BulletinCreator from './BulletinCreator'
 import TimesheetForm from './TimesheetForm'
 import TravelForm from './TravelForm'
-import './Dashboard.css'
 
 // Lazy load Forms component (heavy)
 const Forms = lazy(() => import('./Forms'))

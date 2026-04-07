@@ -1,5 +1,4 @@
 import { LOGOS, getLogoPreviewPath, getDefaultLogo } from '../config/logos'
-import './Composer.css'
 
 /**
  * Letterhead selector component with logo dropdown

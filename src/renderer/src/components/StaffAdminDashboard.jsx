@@ -2,8 +2,6 @@ import { useState, useEffect, lazy, Suspense } from 'react'
 import SmsComposer from './SmsComposer'
 import EmailComposer from './EmailComposer'
 import BulletinCreator from './BulletinCreator'
-import './Dashboard.css'
-import './StaffAdminDashboard.css'
 
 // Lazy load heavy components that contain rich editors
 const Forms = lazy(() => import('./Forms'))

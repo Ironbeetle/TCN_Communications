@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
-import './MemberSearch.css'
 
 const ITEMS_PER_PAGE = 25
 const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('')
@@ -265,11 +264,11 @@ function MemberSearch({ type, selected, onSelect, compact = false }) {
   }
 
   const getAvatarColor = (name) => {
-    if (!name) return '#666'
+    if (!name) return '#A98B76'
     const colors = [
-      '#00d9ff', '#ff6b6b', '#4ecdc4', '#45b7d1', 
-      '#96ceb4', '#ffeaa7', '#dfe6e9', '#fd79a8',
-      '#a29bfe', '#6c5ce7', '#00b894', '#e17055'
+      '#BABF94', '#A3A87A', '#A98B76', '#8a6552', 
+      '#c4a882', '#d4b896', '#b8a088', '#c9b99a',
+      '#a8b87a', '#9aab6e', '#bfab8f', '#c2a97a'
     ]
     const index = name.charCodeAt(0) % colors.length
     return colors[index]

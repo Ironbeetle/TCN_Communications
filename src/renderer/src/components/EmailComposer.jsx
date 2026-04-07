@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import MemberSearch from './MemberSearch'
 import { LOGOS, getLogoPreviewPath, getDefaultLogo } from '../config/logos'
-import './Composer.css'
 
 function EmailComposer({ user }) {
   const [subject, setSubject] = useState('')

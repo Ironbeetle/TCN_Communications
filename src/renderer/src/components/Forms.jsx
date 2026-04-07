@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react'
 import FormBuilder from './FormBuilder'
 import SubmissionsViewer from './SubmissionsViewer'
-import './Forms.css'
 
 function Forms({ user }) {
   const [forms, setForms] = useState([])

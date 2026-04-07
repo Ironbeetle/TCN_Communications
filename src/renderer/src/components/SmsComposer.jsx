@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import MemberSearch from './MemberSearch'
-import './Composer.css'
 
 function SmsComposer({ user }) {
   const [message, setMessage] = useState('')

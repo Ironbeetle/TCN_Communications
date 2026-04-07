@@ -3,7 +3,6 @@ import ReactQuill from 'react-quill-new'
 import 'react-quill-new/dist/quill.snow.css'
 import LetterheadSelector from './LetterheadSelector'
 import { getDefaultLogo } from '../config/logos'
-import './Composer.css'
 
 const QUILL_MODULES = {
   toolbar: [

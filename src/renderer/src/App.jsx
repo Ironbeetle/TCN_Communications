@@ -3,6 +3,8 @@ import Login from './components/Login'
 import Dashboard from './components/Dashboard'
 import AdminDashboard from './components/AdminDashboard'
 import StaffAdminDashboard from './components/StaffAdminDashboard'
+import FinanceDashboard from './components/FinanceDashboard'
+import DeptDashboard from './components/DeptDashboard'
 
 function App() {
   const [user, setUser] = useState(null)
@@ -49,19 +51,24 @@ function App() {
   }
 
   // Role-based routing
-  const isAdmin = user.role === 'ADMIN' || user.role === 'COUNCIL'
-  const isStaffAdmin = user.role === 'STAFF_ADMIN'
-  
-  // Admin gets staff admin dashboard with full access (no department filter)
-  if (isAdmin) {
-    return <StaffAdminDashboard user={user} onLogout={handleLogout} isFullAdmin={true} />
+  const role = user.role
+
+  if (role === 'ADMIN' || role === 'COUNCIL') {
+    return <AdminDashboard user={user} onLogout={handleLogout} />
   }
-  
-  // Staff Admin gets the staff admin dashboard (filtered to their department)
-  if (isStaffAdmin) {
+
+  if (role === 'STAFF_ADMIN') {
     return <StaffAdminDashboard user={user} onLogout={handleLogout} isFullAdmin={false} />
   }
-  
+
+  if (role === 'FINANCE') {
+    return <FinanceDashboard user={user} onLogout={handleLogout} />
+  }
+
+  if (role === 'DEPARTMENT_ADMIN') {
+    return <DeptDashboard user={user} onLogout={handleLogout} />
+  }
+
   // Regular staff get the standard dashboard
   return <Dashboard user={user} onLogout={handleLogout} />
 }

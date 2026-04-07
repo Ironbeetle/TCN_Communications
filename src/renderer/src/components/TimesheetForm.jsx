@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
 import useTimesheetStore, { SCHEDULE_PRESETS } from '../stores/timesheetStore'
-import './TimesheetForm.css'
 
 function TimesheetForm({ user, onBack }) {
   // Get state and actions from Zustand store

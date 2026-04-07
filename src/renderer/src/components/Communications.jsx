@@ -2,7 +2,6 @@ import { useState } from 'react'
 import SmsComposer from './SmsComposer'
 import EmailComposer from './EmailComposer'
 import BulletinCreator from './BulletinCreator'
-import './Communications.css'
 
 function Communications({ user }) {
   const [activeTab, setActiveTab] = useState('sms')

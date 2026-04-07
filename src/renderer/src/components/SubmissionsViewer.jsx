@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react'
-import './Forms.css'
 
 function SubmissionsViewer({ form, onBack }) {
   const [submissions, setSubmissions] = useState([])

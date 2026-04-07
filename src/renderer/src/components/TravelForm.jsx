@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react'
-import './TravelForm.css'
 
 // Default rates
 const DEFAULT_RATES = {
