@@ -4,6 +4,7 @@ import EmailComposer from './EmailComposer'
 import BulletinCreator from './BulletinCreator'
 import TimesheetForm from './TimesheetForm'
 import TravelForm from './TravelForm'
+import HelpDrawer from './HelpDrawer'
 
 function DeptDashboard({ user, onLogout }) {
   const [activeView, setActiveView] = useState('home')
@@ -767,6 +768,7 @@ function DeptDashboard({ user, onLogout }) {
           </div>
         </div>
       )}
+      <HelpDrawer activeView={activeView} />
     </div>
   )
 }

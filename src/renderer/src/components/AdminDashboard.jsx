@@ -1,4 +1,5 @@
 import { useState, useEffect, lazy, Suspense } from 'react'
+import HelpDrawer from './HelpDrawer'
 
 // Lazy load heavy components
 const Communications = lazy(() => import('./Communications'))
@@ -205,6 +206,7 @@ function AdminDashboard({ user, onLogout }) {
           </Suspense>
         )}
       </main>
+      <HelpDrawer activeView={activeView} />
     </div>
   )
 }

@@ -1,4 +1,5 @@
 import { useState, useEffect, lazy, Suspense } from 'react'
+import HelpDrawer from './HelpDrawer'
 
 // Lazy load heavy components
 const Forms = lazy(() => import('./Forms'))
@@ -501,6 +502,7 @@ function FinanceDashboard({ user, onLogout }) {
           </div>
         </div>
       )}
+      <HelpDrawer activeView={activeView} />
     </div>
   )
 }

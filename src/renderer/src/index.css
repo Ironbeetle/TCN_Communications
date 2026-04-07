@@ -6032,3 +6032,346 @@ button:active {
     gap: 0.5rem;
   }
 }
+
+/* ============================================
+   Help System — Floating Drawer & Tooltip
+   ============================================ */
+
+/* ── Floating Action Button ── */
+.help-fab {
+  position: fixed;
+  bottom: 2rem;
+  right: 2rem;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: 2px solid var(--staff-accent);
+  background: var(--staff-bg-card);
+  color: var(--staff-text-primary);
+  font-size: 1.3rem;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 9998;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.help-fab:hover {
+  background: var(--staff-accent);
+  color: #fff;
+  transform: scale(1.08);
+}
+
+.help-fab-active {
+  background: var(--staff-accent);
+  color: #fff;
+}
+
+.help-fab-dimmed {
+  opacity: 0.45;
+}
+
+.help-fab-dimmed:hover {
+  opacity: 1;
+}
+
+/* ── Backdrop ── */
+.help-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.25);
+  z-index: 9998;
+}
+
+/* ── Drawer Panel ── */
+.help-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: 380px;
+  max-width: 90vw;
+  height: 100vh;
+  background: var(--staff-bg-card);
+  border-left: 1px solid var(--staff-border);
+  box-shadow: -4px 0 24px rgba(0, 0, 0, 0.12);
+  z-index: 9999;
+  transform: translateX(100%);
+  transition: transform 0.3s ease;
+  display: flex;
+  flex-direction: column;
+}
+
+.help-drawer-open {
+  transform: translateX(0);
+}
+
+.help-drawer-inner {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+/* ── Header ── */
+.help-drawer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--staff-border);
+}
+
+.help-drawer-title {
+  font-size: 1.1rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.help-drawer-title .help-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--staff-accent);
+  color: #fff;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.help-close-btn {
+  background: none;
+  border: none;
+  font-size: 1.2rem;
+  cursor: pointer;
+  color: var(--staff-text-secondary);
+  padding: 0.25rem;
+  border-radius: 4px;
+  transition: color 0.15s;
+}
+
+.help-close-btn:hover {
+  color: var(--staff-text-primary);
+}
+
+/* ── Description ── */
+.help-description {
+  color: var(--staff-text-secondary);
+  font-size: 0.92rem;
+  line-height: 1.55;
+}
+
+/* ── Sections ── */
+.help-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.help-section-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--staff-text-primary);
+}
+
+/* ── Steps ── */
+.help-steps {
+  list-style: none;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.help-step {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+}
+
+.help-step-number {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--staff-accent);
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.help-step-label {
+  display: block;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.help-step-detail {
+  display: block;
+  font-size: 0.85rem;
+  color: var(--staff-text-secondary);
+  margin-top: 0.15rem;
+}
+
+/* ── Tips ── */
+.help-tips {
+  list-style: none;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.help-tip {
+  font-size: 0.88rem;
+  color: var(--staff-text-secondary);
+  padding-left: 1.2rem;
+  position: relative;
+}
+
+.help-tip::before {
+  content: '•';
+  position: absolute;
+  left: 0;
+  color: var(--staff-accent);
+  font-weight: 700;
+}
+
+/* ── FAQs ── */
+.help-faqs {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.help-faq-item {
+  border: 1px solid var(--staff-border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.help-faq-question {
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 0.6rem 0.75rem;
+  font-size: 0.88rem;
+  font-weight: 500;
+  cursor: pointer;
+  color: var(--staff-text-primary);
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  transition: background 0.15s;
+}
+
+.help-faq-question:hover {
+  background: var(--staff-bg-card-hover);
+}
+
+.help-faq-answer {
+  padding: 0 0.75rem 0.6rem 1.75rem;
+  font-size: 0.85rem;
+  color: var(--staff-text-secondary);
+  line-height: 1.5;
+}
+
+/* ── Footer ── */
+.help-footer {
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--staff-border);
+  margin-top: auto;
+}
+
+.help-dismiss-btn {
+  background: none;
+  border: none;
+  font-size: 0.82rem;
+  color: var(--staff-text-muted);
+  cursor: pointer;
+  padding: 0.4rem 0;
+  transition: color 0.15s;
+}
+
+.help-dismiss-btn:hover {
+  color: var(--staff-text-primary);
+}
+
+/* ── Inline Tooltip ── */
+.help-tooltip-wrapper {
+  display: inline-flex;
+  align-items: center;
+  position: relative;
+  margin-left: 0.35rem;
+  vertical-align: middle;
+}
+
+.help-tooltip-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 1.5px solid var(--staff-accent);
+  background: transparent;
+  color: var(--staff-accent);
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.help-tooltip-trigger:hover {
+  background: var(--staff-accent);
+  color: #fff;
+}
+
+.help-tooltip-bubble {
+  position: absolute;
+  background: var(--staff-text-primary);
+  color: #fff;
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  white-space: normal;
+  width: max-content;
+  max-width: 240px;
+  z-index: 10000;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  pointer-events: none;
+}
+
+.help-tooltip-top {
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.help-tooltip-bottom {
+  top: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.help-tooltip-left {
+  right: calc(100% + 8px);
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.help-tooltip-right {
+  left: calc(100% + 8px);
+  top: 50%;
+  transform: translateY(-50%);
+}

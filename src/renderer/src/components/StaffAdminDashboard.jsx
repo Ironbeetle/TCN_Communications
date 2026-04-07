@@ -2,6 +2,7 @@ import { useState, useEffect, lazy, Suspense } from 'react'
 import SmsComposer from './SmsComposer'
 import EmailComposer from './EmailComposer'
 import BulletinCreator from './BulletinCreator'
+import HelpDrawer from './HelpDrawer'
 
 // Lazy load heavy components that contain rich editors
 const Forms = lazy(() => import('./Forms'))
@@ -1020,6 +1021,7 @@ function StaffAdminDashboard({ user, onLogout, isFullAdmin = false }) {
           </div>
         </div>
       )}
+      <HelpDrawer activeView={activeView} />
     </div>
   )
 }

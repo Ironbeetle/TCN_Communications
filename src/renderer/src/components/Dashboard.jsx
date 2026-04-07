@@ -4,6 +4,7 @@ import EmailComposer from './EmailComposer'
 import BulletinCreator from './BulletinCreator'
 import TimesheetForm from './TimesheetForm'
 import TravelForm from './TravelForm'
+import HelpDrawer from './HelpDrawer'
 
 // Lazy load Forms component (heavy)
 const Forms = lazy(() => import('./Forms'))
@@ -405,6 +406,7 @@ function Dashboard({ user, onLogout }) {
           </Suspense>
         )}
       </main>
+      <HelpDrawer activeView={activeView} />
     </div>
   )
 }
